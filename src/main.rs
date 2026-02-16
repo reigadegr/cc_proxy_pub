@@ -12,7 +12,10 @@ use bytes::Bytes;
 use chrono::Local;
 use pingora::{http::ResponseHeader, prelude::*};
 use std::fmt;
-use tracing_subscriber::fmt::{format::Writer, time::FormatTime};
+use tracing_subscriber::{
+    EnvFilter,
+    fmt::{format::Writer, time::FormatTime},
+};
 
 struct LoggerFormatter;
 
@@ -51,7 +54,10 @@ impl ProxyHttp for Gateway {
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
         req.insert_header("host", "open.bigmodel.cn")?;
-        req.insert_header("Authorization","35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M")?;
+        req.insert_header(
+            "Authorization",
+            "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M",
+        )?;
         Ok(())
     }
 
@@ -86,11 +92,9 @@ impl ProxyHttp for Gateway {
     async fn response_filter(
         &self,
         _session: &mut Session,
-        upstream_response: &mut ResponseHeader,
+        _upstream_response: &mut ResponseHeader,
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
-        upstream_response.insert_header("Access-Control-Allow-Origin", "*")?;
-        upstream_response.insert_header("Access-Control-Allow-Credentials", "true")?;
         Ok(())
     }
 }
@@ -99,7 +103,13 @@ impl ProxyHttp for Gateway {
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_timer(LoggerFormatter).init();
+    // Initialize logging (after config is loaded to use configured log level)
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_timer(LoggerFormatter)
+        .init();
+
     let mut my_server = Server::new(None)?;
     my_server.bootstrap();
 

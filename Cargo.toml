@@ -10,7 +10,10 @@ chrono = "0.4.43"
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 pingora = { version = "0.7.0", features = ["proxy", "boringssl", "time"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["local-time"] }
+tracing-subscriber = { version = "0.3.22", features = [
+  "local-time",
+  "env-filter",
+] }
 
 [profile.dev]
 debug = 0
