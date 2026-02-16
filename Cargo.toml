@@ -5,9 +5,10 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1.89"
+bytes = "1.11.1"
 chrono = "0.4.43"
-mimalloc = { version = "0.1.48", features = ["no_thp", "override", "v3"] }
-pingora = { version = "0.6.0", features = ["lb"] }
+mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
+pingora = { version = "0.7.0", features = ["proxy", "boringssl", "time"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["local-time"] }
 

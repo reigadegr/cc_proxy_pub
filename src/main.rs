@@ -8,6 +8,7 @@
     clippy::suspicious
 )]
 use async_trait::async_trait;
+use bytes::Bytes;
 use chrono::Local;
 use pingora::{http::ResponseHeader, prelude::*};
 use std::fmt;
@@ -34,8 +35,35 @@ impl ProxyHttp for Gateway {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let peer = Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new()));
+        let peer = Box::new(HttpPeer::new(
+            ("open.bigmodel.cn", 443),
+            true,
+            "open.bigmodel.cn".to_string(),
+        ));
         Ok(peer)
+    }
+
+    /// 关键：设置 Host 头和 API Key，否则 WAF 拦截
+    async fn upstream_request_filter(
+        &self,
+        _session: &mut Session,
+        req: &mut pingora::http::RequestHeader,
+        _ctx: &mut Self::CTX,
+    ) -> Result<()> {
+        req.insert_header("host", "open.bigmodel.cn")?;
+        req.insert_header("Authorization","35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M")?;
+        Ok(())
+    }
+
+    /// 关键：透传 body（必须！）
+    async fn request_body_filter(
+        &self,
+        _: &mut Session,
+        _: &mut Option<Bytes>,
+        _: bool,
+        _ctx: &mut Self::CTX,
+    ) -> Result<()> {
+        Ok(())
     }
 
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
