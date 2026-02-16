@@ -3,9 +3,24 @@ name = "pga_demo"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+unwrap_used = { level = "warn", priority = -1 }
+expect_used = { level = "warn", priority = -1 }
+similar_names = "allow"
+missing_errors_doc = "allow"
+missing_safety_doc = "allow"
+missing_panics_doc = "allow"
+
 [dependencies]
 async-trait = "0.1.89"
-bytes = "1.11.1"
 chrono = "0.4.43"
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 pingora = { version = "0.7.0", features = ["proxy", "boringssl", "time"] }

@@ -1,16 +1,6 @@
-#![warn(
-    clippy::nursery,
-    clippy::pedantic,
-    clippy::style,
-    clippy::complexity,
-    clippy::perf,
-    clippy::correctness,
-    clippy::suspicious
-)]
 use async_trait::async_trait;
-use bytes::Bytes;
 use chrono::Local;
-use pingora::{http::ResponseHeader, prelude::*};
+use pingora::prelude::*;
 use std::fmt;
 use tracing_subscriber::{
     EnvFilter,
@@ -46,7 +36,7 @@ impl ProxyHttp for Gateway {
         Ok(peer)
     }
 
-    /// 关键：设置 Host 头和 API Key，否则 WAF 拦截
+    /// 关键：设置 Host 头和 API Key，否则 WAF/智谱 拦截
     async fn upstream_request_filter(
         &self,
         _session: &mut Session,
@@ -58,43 +48,6 @@ impl ProxyHttp for Gateway {
             "Authorization",
             "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M",
         )?;
-        Ok(())
-    }
-
-    /// 关键：透传 body（必须！）
-    async fn request_body_filter(
-        &self,
-        _: &mut Session,
-        _: &mut Option<Bytes>,
-        _: bool,
-        _ctx: &mut Self::CTX,
-    ) -> Result<()> {
-        Ok(())
-    }
-
-    async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
-        let req = session.req_header();
-
-        if req.method == "OPTIONS" {
-            let mut resp = ResponseHeader::build(204, None)?;
-            resp.insert_header("Access-Control-Allow-Origin", "*")?;
-            resp.insert_header("Access-Control-Allow-Headers", "*")?;
-            resp.insert_header("Access-Control-Allow-Methods", "*")?;
-            resp.insert_header("Access-Control-Allow-Credentials", "true")?;
-
-            session.write_response_header(Box::new(resp), false).await?;
-            return Ok(true);
-        }
-
-        Ok(false)
-    }
-
-    async fn response_filter(
-        &self,
-        _session: &mut Session,
-        _upstream_response: &mut ResponseHeader,
-        _ctx: &mut Self::CTX,
-    ) -> Result<()> {
         Ok(())
     }
 }
