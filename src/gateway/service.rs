@@ -164,10 +164,7 @@ pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
 
     let waste = user_hist + assistant + system;
     let waste_ratio = if user_new > 0 {
-        #[allow(clippy::cast_precision_loss)]
-        {
-            waste as f64 / user_new as f64
-        }
+        waste as f64 / user_new as f64
     } else {
         0.0
     };
@@ -177,29 +174,24 @@ pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
         total, user_new, user_hist, assistant, system, waste_ratio
     );
 
-    if count.is_multiple_of(1) {
-        let total_acc = gateway.total_tokens.load(Ordering::Relaxed);
-        let new_acc = gateway.user_new_tokens.load(Ordering::Relaxed);
-        let hist_acc = gateway.user_history_tokens.load(Ordering::Relaxed)
-            + gateway.assistant_tokens.load(Ordering::Relaxed);
-        let sys_acc = gateway.system_tokens.load(Ordering::Relaxed);
+    let total_acc = gateway.total_tokens.load(Ordering::Relaxed);
+    let new_acc = gateway.user_new_tokens.load(Ordering::Relaxed);
+    let hist_acc = gateway.user_history_tokens.load(Ordering::Relaxed)
+        + gateway.assistant_tokens.load(Ordering::Relaxed);
+    let sys_acc = gateway.system_tokens.load(Ordering::Relaxed);
 
-        warn!(
-            "🔥 累计 {} 次 | 总: {} | 你: {} | 浪费: {} (历史:{} 系统:{}) | 平均浪费比: {:.1}:1",
-            count,
-            total_acc,
-            new_acc,
-            hist_acc + sys_acc,
-            hist_acc,
-            sys_acc,
-            if new_acc > 0 {
-                #[allow(clippy::cast_precision_loss)]
-                {
-                    (hist_acc + sys_acc) as f64 / new_acc as f64
-                }
-            } else {
-                0.0
-            }
-        );
-    }
+    warn!(
+        "🔥 累计 {} 次 | 总: {} | 你: {} | 浪费: {} (历史:{} 系统:{}) | 平均浪费比: {:.1}:1",
+        count,
+        total_acc,
+        new_acc,
+        hist_acc + sys_acc,
+        hist_acc,
+        sys_acc,
+        if new_acc > 0 {
+            (hist_acc + sys_acc) as f64 / new_acc as f64
+        } else {
+            0.0
+        }
+    );
 }

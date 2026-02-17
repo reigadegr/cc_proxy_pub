@@ -18,6 +18,7 @@ similar_names = "allow"
 missing_errors_doc = "allow"
 missing_safety_doc = "allow"
 missing_panics_doc = "allow"
+cast_precision_loss = "allow"
 
 [dependencies]
 async-trait = "0.1.89"
