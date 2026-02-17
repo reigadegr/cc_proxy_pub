@@ -1,9 +1,14 @@
+mod config;
 mod gateway;
 
 use chrono::Local;
+use config::AtomicConfig;
 use gateway::Gateway;
 use pingora::prelude::*;
-use std::{fmt, io::IsTerminal};
+use std::fmt;
+use std::io::IsTerminal;
+use std::sync::Arc;
+use tracing::info;
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::Writer, time::FormatTime},
@@ -21,10 +26,9 @@ impl FormatTime for LoggerFormatter {
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
-    // Initialize logging (after config is loaded to use configured log level)
+    // 初始化日志
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    // 检测 stdout 是否是终端，自动启用/禁用颜色
     let is_terminal = std::io::stdout().is_terminal();
 
     tracing_subscriber::fmt()
@@ -33,13 +37,27 @@ fn main() -> Result<()> {
         .with_ansi(is_terminal)
         .init();
 
+    // 初始化配置
+    let atomic_config = Arc::new(AtomicConfig::init());
+    info!(
+        "Initial config: api_key={}***, host={}",
+        atomic_config
+            .get()
+            .api_key
+            .chars()
+            .take(8)
+            .collect::<String>(),
+        atomic_config.get().host
+    );
+
+    // 启动配置文件监听线程
+    Arc::clone(&atomic_config).start_watcher();
+
     let mut my_server = Server::new(None)?;
     my_server.bootstrap();
 
-    let mut proxy_service = http_proxy_service(
-        &my_server.configuration,
-        <Gateway as std::default::Default>::default(),
-    );
+    let mut proxy_service =
+        http_proxy_service(&my_server.configuration, Gateway::new(atomic_config));
     proxy_service.add_tcp("0.0.0.0:9066");
 
     my_server.add_service(proxy_service);

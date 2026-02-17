@@ -1,9 +1,11 @@
 mod service;
 
+use crate::config::AtomicConfig;
 use crate::gateway::service::{calculate_tokens, log_full_body, log_full_response};
 use async_trait::async_trait;
 use bytes::Bytes;
 use pingora::prelude::*;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::info;
@@ -22,6 +24,7 @@ impl Default for RequestContext {
 }
 
 pub struct Gateway {
+    config: Arc<AtomicConfig>,
     total_tokens: AtomicU64,
     user_new_tokens: AtomicU64,
     user_history_tokens: AtomicU64,
@@ -30,9 +33,10 @@ pub struct Gateway {
     request_count: AtomicU64,
 }
 
-impl Default for Gateway {
-    fn default() -> Self {
+impl Gateway {
+    pub const fn new(config: Arc<AtomicConfig>) -> Self {
         Self {
+            config,
             total_tokens: AtomicU64::new(0),
             user_new_tokens: AtomicU64::new(0),
             user_history_tokens: AtomicU64::new(0),
@@ -56,11 +60,9 @@ impl ProxyHttp for Gateway {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let peer = Box::new(HttpPeer::new(
-            ("open.bigmodel.cn", 443),
-            true,
-            "open.bigmodel.cn".to_string(),
-        ));
+        let cfg = self.config.get();
+        let host = cfg.host.as_str();
+        let peer = Box::new(HttpPeer::new((host, 443), true, host.to_string()));
         Ok(peer)
     }
 
@@ -70,11 +72,9 @@ impl ProxyHttp for Gateway {
         req: &mut pingora::http::RequestHeader,
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
-        req.insert_header("host", "open.bigmodel.cn")?;
-        req.insert_header(
-            "Authorization",
-            "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M",
-        )?;
+        let cfg = self.config.get();
+        req.insert_header("host", cfg.host.as_str())?;
+        req.insert_header("Authorization", cfg.api_key.as_str())?;
 
         Ok(())
     }
