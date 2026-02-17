@@ -1,7 +1,9 @@
-use async_trait::async_trait;
+mod gateway;
+
 use chrono::Local;
+use gateway::Gateway;
 use pingora::prelude::*;
-use std::fmt;
+use std::{fmt, io::IsTerminal};
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::Writer, time::FormatTime},
@@ -15,58 +17,29 @@ impl FormatTime for LoggerFormatter {
     }
 }
 
-pub struct Gateway {}
-
-#[async_trait]
-impl ProxyHttp for Gateway {
-    type CTX = ();
-
-    fn new_ctx(&self) -> Self::CTX {}
-
-    async fn upstream_peer(
-        &self,
-        _session: &mut Session,
-        _ctx: &mut Self::CTX,
-    ) -> Result<Box<HttpPeer>> {
-        let peer = Box::new(HttpPeer::new(
-            ("open.bigmodel.cn", 443),
-            true,
-            "open.bigmodel.cn".to_string(),
-        ));
-        Ok(peer)
-    }
-
-    /// 关键：设置 Host 头和 API Key，否则 WAF/智谱 拦截
-    async fn upstream_request_filter(
-        &self,
-        _session: &mut Session,
-        req: &mut pingora::http::RequestHeader,
-        _ctx: &mut Self::CTX,
-    ) -> Result<()> {
-        req.insert_header("host", "open.bigmodel.cn")?;
-        req.insert_header(
-            "Authorization",
-            "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M",
-        )?;
-        Ok(())
-    }
-}
-
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
     // Initialize logging (after config is loaded to use configured log level)
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    // 检测 stdout 是否是终端，自动启用/禁用颜色
+    let is_terminal = std::io::stdout().is_terminal();
+
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_timer(LoggerFormatter)
+        .with_ansi(is_terminal)
         .init();
 
     let mut my_server = Server::new(None)?;
     my_server.bootstrap();
 
-    let mut proxy_service = http_proxy_service(&my_server.configuration, Gateway {});
+    let mut proxy_service = http_proxy_service(
+        &my_server.configuration,
+        <Gateway as std::default::Default>::default(),
+    );
     proxy_service.add_tcp("0.0.0.0:9066");
 
     my_server.add_service(proxy_service);
