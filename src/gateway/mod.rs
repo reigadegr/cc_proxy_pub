@@ -1,10 +1,11 @@
 mod service;
 
-use crate::gateway::service::{calculate_tokens, log_full_body};
+use crate::gateway::service::{calculate_tokens, log_full_body, log_full_response};
 use async_trait::async_trait;
 use bytes::Bytes;
 use pingora::prelude::*;
 use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 use tracing::info;
 
 // 每个请求的上下文，用来攒 body chunks
@@ -104,5 +105,41 @@ impl ProxyHttp for Gateway {
         }
 
         Ok(())
+    }
+
+    /// 收集响应体 chunks 并打印
+    fn response_body_filter(
+        &self,
+        _session: &mut Session,
+        body: &mut Option<Bytes>,
+        end_of_stream: bool,
+        _ctx: &mut Self::CTX,
+    ) -> Result<Option<Duration>>
+    where
+        Self::CTX: Send + Sync,
+    {
+        // 响应体需要单独的 buffer，因为没有请求生命周期那么长
+        // 这里用 thread_local 或每次创建新 buffer
+        thread_local! {
+            static RESPONSE_BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(1024 * 1024));
+        }
+
+        if let Some(b) = body {
+            RESPONSE_BUFFER.with_borrow_mut(|buf| buf.extend_from_slice(b.as_ref()));
+        }
+
+        if end_of_stream {
+            RESPONSE_BUFFER.with_borrow(|buf| {
+                if let Ok(body_str) = std::str::from_utf8(buf) {
+                    log_full_response(body_str);
+                } else {
+                    info!("响应体 (二进制, {} 字节)", buf.len());
+                }
+            });
+            // 清空 buffer 为下次请求准备
+            RESPONSE_BUFFER.with_borrow_mut(std::vec::Vec::clear);
+        }
+
+        Ok(None)
     }
 }
