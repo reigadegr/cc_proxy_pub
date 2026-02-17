@@ -1,111 +1,7 @@
-// src/gateway.rs
-use async_trait::async_trait;
-use bytes::Bytes;
-use pingora::prelude::*;
+use crate::Gateway;
 use serde_json::Value;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use tracing::{info, warn};
-
-// 每个请求的上下文，用来攒 body chunks
-pub struct RequestContext {
-    body_buffer: Vec<u8>,
-}
-
-impl Default for RequestContext {
-    fn default() -> Self {
-        Self {
-            body_buffer: Vec::with_capacity(1024 * 1024),
-        }
-    }
-}
-
-pub struct Gateway {
-    total_tokens: AtomicU64,
-    user_new_tokens: AtomicU64,
-    user_history_tokens: AtomicU64,
-    assistant_tokens: AtomicU64,
-    system_tokens: AtomicU64,
-    request_count: AtomicU64,
-}
-
-impl Default for Gateway {
-    fn default() -> Self {
-        Self {
-            total_tokens: AtomicU64::new(0),
-            user_new_tokens: AtomicU64::new(0),
-            user_history_tokens: AtomicU64::new(0),
-            assistant_tokens: AtomicU64::new(0),
-            system_tokens: AtomicU64::new(0),
-            request_count: AtomicU64::new(0),
-        }
-    }
-}
-
-#[async_trait]
-impl ProxyHttp for Gateway {
-    type CTX = RequestContext;
-
-    fn new_ctx(&self) -> Self::CTX {
-        RequestContext::default()
-    }
-
-    async fn upstream_peer(
-        &self,
-        _session: &mut Session,
-        _ctx: &mut Self::CTX,
-    ) -> Result<Box<HttpPeer>> {
-        let peer = Box::new(HttpPeer::new(
-            ("open.bigmodel.cn", 443),
-            true,
-            "open.bigmodel.cn".to_string(),
-        ));
-        Ok(peer)
-    }
-
-    async fn upstream_request_filter(
-        &self,
-        _session: &mut Session,
-        req: &mut pingora::http::RequestHeader,
-        _ctx: &mut Self::CTX,
-    ) -> Result<()> {
-        req.insert_header("host", "open.bigmodel.cn")?;
-        req.insert_header(
-            "Authorization",
-            "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M",
-        )?;
-
-        Ok(())
-    }
-
-    /// 收集 body chunks，只在最后一个 chunk 时统计
-    async fn request_body_filter(
-        &self,
-        _session: &mut Session,
-        body: &mut Option<Bytes>,
-        end_of_stream: bool,
-        ctx: &mut Self::CTX,
-    ) -> Result<()> {
-        if let Some(b) = body {
-            ctx.body_buffer.extend_from_slice(b);
-        }
-
-        // 只有收到最后一个 chunk 时才处理和统计
-        if end_of_stream {
-            let body_str = if let Ok(s) = std::str::from_utf8(&ctx.body_buffer) {
-                s.to_string()
-            } else {
-                info!("请求体 (二进制, {} 字节)", ctx.body_buffer.len());
-                return Ok(());
-            };
-
-            // 🆕 打印完整请求体（分段打印避免截断）
-            log_full_body(&body_str);
-            caculate_tokens(&self, &body_str);
-        }
-
-        Ok(())
-    }
-}
 
 fn estimate_tokens(text: &str) -> u64 {
     // 整数运算避免浮点精度损失: (len * 2 + 6) / 7 ≈ len / 3.5
@@ -142,7 +38,7 @@ fn is_system_reminder(content: &str) -> bool {
 }
 
 // 返回: (total, user_new, user_history, assistant, system)
-fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
+pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
     let mut system_tokens = 0;
     let mut user_new_tokens = 0;
     let mut user_history_tokens = 0;
@@ -214,7 +110,7 @@ fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
 }
 
 // 辅助函数：分段打印大字符串，避免日志截断和字符边界 panic
-fn log_full_body(body: &str) {
+pub fn log_full_body(body: &str) {
     const CHUNK_SIZE: usize = 8000;
 
     let len = body.len();
@@ -250,7 +146,7 @@ fn log_full_body(body: &str) {
     info!("=== 请求体结束 ===");
 }
 
-fn caculate_tokens(gateway: &Gateway, body_str: &str) {
+pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
     let (total, user_new, user_hist, assistant, system) = analyze_request_body(body_str);
 
     gateway.total_tokens.fetch_add(total, Ordering::Relaxed);
