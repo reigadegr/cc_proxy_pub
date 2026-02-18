@@ -66,8 +66,12 @@ impl ProxyHttp for Gateway {
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
         let cfg = self.config.get();
-        let host = cfg.host.as_str();
-        let peer = Box::new(HttpPeer::new((host, 443), true, host.to_string()));
+        let endpoint = &cfg.endpoint;
+        let host_str = endpoint.replace("https://", "");
+        let host = host_str
+            .split_once('/')
+            .map_or(host_str.as_str(), |(h, _)| h);
+        let peer = Box::new(HttpPeer::new((host, 443u16), true, host.to_string()));
         Ok(peer)
     }
 
@@ -77,7 +81,7 @@ impl ProxyHttp for Gateway {
         req: &mut pingora::http::RequestHeader,
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
-        let cfg = self.config.get();
+        let _cfg = self.config.get();
 
         // 打印原始请求路径
         info!("🔍 原始请求路径: {}", req.uri);
@@ -90,15 +94,11 @@ impl ProxyHttp for Gateway {
             info!("🔍 URI query: {}", query);
         }
 
-        // 重写请求路径为配置中的 path
-        let uri: http::Uri = cfg.path.parse().unwrap_or_else(|_| {
-            tracing::warn!("Invalid path URI: {}", cfg.path);
-            http::Uri::default()
-        });
-        info!("🔍 配置中的目标 path: {}", cfg.path);
-        info!("🔍 解析后的 URI: {}", uri);
+        let cfg = self.config.get();
+        let endpoint = &cfg.endpoint;
+        let host_str = endpoint.replace("https://", "");
+        let base_path = host_str.find('/').map_or("/", |i| &host_str[i..]);
 
-        // 改成 to_string() 复制出来，不借用 req
         let original_uri = req
             .uri
             .path_and_query()
@@ -106,7 +106,7 @@ impl ProxyHttp for Gateway {
 
         // 拼接新路径：配置的 path + 原始路径
         // 例如: /api/anthropic + /v1/messages = /api/anthropic/v1/messages
-        let mut new_path = format!("{}/{}", cfg.path.as_str(), original_uri);
+        let mut new_path = format!("{base_path}/{original_uri}");
 
         // 移除所有连续斜杠
         while new_path.contains("//") {
@@ -114,8 +114,6 @@ impl ProxyHttp for Gateway {
         }
 
         // 设置新的 URI
-
-        // ... 后面的代码保持不变 ...
         match new_path.parse::<http::Uri>() {
             Ok(uri) => {
                 req.set_uri(uri);
@@ -124,7 +122,14 @@ impl ProxyHttp for Gateway {
             Err(e) => warn!("路径未重写: {}", e),
         }
 
-        req.insert_header("host", cfg.host.as_str())?;
+        let cfg = self.config.get();
+        let endpoint = &cfg.endpoint;
+        let host_str = endpoint.replace("https://", "");
+        let host = host_str
+            .split_once('/')
+            .map_or(host_str.as_str(), |(h, _)| h);
+        info!("host={host}");
+        req.insert_header("host", host)?;
         req.insert_header("Authorization", cfg.api_key.as_str())?;
 
         // 打印修改后的 URI

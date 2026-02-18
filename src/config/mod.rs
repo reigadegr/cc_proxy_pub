@@ -15,25 +15,22 @@ pub struct AtomicConfig {
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// 上游主机地址+路径
+    #[serde(default = "default_point")]
+    pub endpoint: String,
     /// API 密钥
     pub api_key: String,
-    /// 上游主机地址
-    pub host: String,
-    /// 上游 API 路径（如 /api/anthropic）
-    #[serde(default = "default_path")]
-    pub path: String,
 }
 
-fn default_path() -> String {
-    "/api/anthropic".to_string()
+fn default_point() -> String {
+    "https://open.bigmodel.cn/api/anthropic".to_string()
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             api_key: "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M".to_string(),
-            host: "open.bigmodel.cn".to_string(),
-            path: default_path(),
+            endpoint: default_point(),
         }
     }
 }
@@ -63,8 +60,7 @@ impl AtomicConfig {
             "api_key = {}***",
             config.api_key.chars().take(8).collect::<String>()
         );
-        info!("host = {}", config.host);
-        info!("path = {}", config.path);
+        info!("endpoint = {}", config.endpoint);
 
         Self {
             inner: ArcSwap::from(Arc::new(config)),
@@ -110,12 +106,11 @@ impl AtomicConfig {
 
                 // 检测配置是否真的发生了变化
                 let api_key_changed = old.api_key != new_config.api_key;
-                let host_changed = old.host != new_config.host;
-                let path_changed = old.path != new_config.path;
+                let endpoint_changed = old.endpoint != new_config.endpoint;
 
                 self.inner.store(Arc::new(new_config.clone()));
 
-                if api_key_changed || host_changed || path_changed {
+                if api_key_changed || endpoint_changed {
                     info!("✅ 配置已更新:");
                     if api_key_changed {
                         info!(
@@ -124,21 +119,18 @@ impl AtomicConfig {
                             new_config.api_key.chars().take(8).collect::<String>()
                         );
                     }
-                    if host_changed {
-                        info!("host: {} → {}", old.host, new_config.host);
-                    }
-                    if path_changed {
-                        info!("path: {} → {}", old.path, new_config.path);
+
+                    if endpoint_changed {
+                        info!("endpoint: {} → {}", old.endpoint, new_config.endpoint);
                     }
                 } else {
                     info!("ℹ️ 配置文件内容未变化");
                 }
 
                 info!(
-                    "📋 当前配置: api_key={}***, host={}, path={}",
+                    "📋 当前配置: api_key={}***, endpoint={}",
                     new_config.api_key.chars().take(8).collect::<String>(),
-                    new_config.host,
-                    new_config.path
+                    new_config.endpoint
                 );
             }
             Err(e) => {

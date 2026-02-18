@@ -1,3 +1,2 @@
+endpoint = "https://open.bigmodel.cn/api/anthropic"
 api_key = "<your_api_key>"
-host = "open.bigmodel.cn"
-path = "/api/anthropic"
