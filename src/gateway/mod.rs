@@ -102,20 +102,19 @@ impl ProxyHttp for Gateway {
             .path_and_query()
             .map_or("", http::uri::PathAndQuery::as_str);
 
-        // 3. 拼接新路径：配置的 path + 原始路径
+        // 拼接新路径：配置的 path + 原始路径
         // 例如: /api/anthropic + /v1/messages = /api/anthropic/v1/messages
-        let new_path = if original_path.starts_with('/') {
-            format!("{}{}", cfg.path.as_str(), original_path)
-        } else {
-            format!("{}/{}", cfg.path.as_str(), original_path)
-        };
+        let mut new_path = format!("{}/{}", cfg.path.as_str(), original_path);
+
+        // 移除所有连续斜杠
+        while new_path.contains("//") {
+            new_path = new_path.replace("//", "/");
+        }
 
         info!("路径重写: {} -> {}", original_path, new_path);
 
-        // 4. 设置新的 URI
+        // 设置新的 URI
         req.set_uri(new_path.parse().unwrap_or_else(|_| original_uri.clone()));
-
-        // req.set_uri(original_uri + uri);
 
         req.insert_header("host", cfg.host.as_str())?;
         req.insert_header("Authorization", cfg.api_key.as_str())?;
