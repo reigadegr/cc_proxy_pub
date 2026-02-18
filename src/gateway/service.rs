@@ -1,4 +1,5 @@
 use crate::Gateway;
+use pingora::http::RequestHeader;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 use tracing::{info, warn};
@@ -227,4 +228,19 @@ pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
             0.0
         }
     );
+}
+
+/// 打印全部请求头
+pub fn log_request_headers(req: &RequestHeader) {
+    info!("=== 请求头 ===");
+    info!("Method: {}", req.method);
+    info!("URI: {}", req.uri);
+    info!("Version: {:?}", req.version);
+
+    for (name, value) in &req.headers {
+        if let Ok(value_str) = value.to_str() {
+            info!("{}: {}", name, value_str);
+        }
+    }
+    info!("=== 请求头结束 ===");
 }

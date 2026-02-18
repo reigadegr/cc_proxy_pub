@@ -2,7 +2,7 @@ mod service;
 
 use crate::{
     config::AtomicConfig,
-    gateway::service::{calculate_tokens, log_full_body, log_full_response},
+    gateway::service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -91,8 +91,8 @@ impl ProxyHttp for Gateway {
             .split_once('/')
             .map_or((host_str, "/"), |(h, p)| (h, p));
 
-        // 3. 精简调试日志
-        info!("🔍 {} {}", req.method, req.uri);
+        // 3. 打印全部请求头
+        log_request_headers(req);
 
         // 路径重写
         let original_uri = req
@@ -114,8 +114,10 @@ impl ProxyHttp for Gateway {
             Err(e) => info!("路径未重写: {}", e),
         }
         // 合并请求头设置
+
+        let auth = format!("Bearer {}", cfg.api_key.as_str());
+        req.insert_header("Authorization", auth)?;
         req.insert_header("host", host)?;
-        req.insert_header("Authorization", cfg.api_key.as_str())?;
 
         info!("最终 URI: {}", req.uri);
 
