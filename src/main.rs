@@ -40,14 +40,15 @@ fn main() -> Result<()> {
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
     info!(
-        "Initial config: api_key={}***, host={}",
+        "Initial config: api_key={}***, host={}, path={}",
         atomic_config
             .get()
             .api_key
             .chars()
             .take(8)
             .collect::<String>(),
-        atomic_config.get().host
+        atomic_config.get().host,
+        atomic_config.get().path
     );
 
     // 启动配置文件监听线程

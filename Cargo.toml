@@ -25,6 +25,7 @@ arc-swap = "1.8.2"
 async-trait = "0.1.89"
 bytes = "1.11"
 chrono = "0.4.43"
+http = "1.4.0"
 inotify = "0.11.0"
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 pingora = { version = "0.7.0", features = ["proxy", "boringssl", "time"] }

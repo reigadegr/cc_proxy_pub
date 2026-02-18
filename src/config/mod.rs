@@ -19,6 +19,13 @@ pub struct Config {
     pub api_key: String,
     /// 上游主机地址
     pub host: String,
+    /// 上游 API 路径（如 /api/anthropic）
+    #[serde(default = "default_path")]
+    pub path: String,
+}
+
+fn default_path() -> String {
+    "/api/anthropic".to_string()
 }
 
 impl Default for Config {
@@ -26,6 +33,7 @@ impl Default for Config {
         Self {
             api_key: "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M".to_string(),
             host: "open.bigmodel.cn".to_string(),
+            path: default_path(),
         }
     }
 }
@@ -56,6 +64,7 @@ impl AtomicConfig {
             config.api_key.chars().take(8).collect::<String>()
         );
         info!("host = {}", config.host);
+        info!("path = {}", config.path);
 
         Self {
             inner: ArcSwap::from(Arc::new(config)),
@@ -102,10 +111,11 @@ impl AtomicConfig {
                 // 检测配置是否真的发生了变化
                 let api_key_changed = old.api_key != new_config.api_key;
                 let host_changed = old.host != new_config.host;
+                let path_changed = old.path != new_config.path;
 
                 self.inner.store(Arc::new(new_config.clone()));
 
-                if api_key_changed || host_changed {
+                if api_key_changed || host_changed || path_changed {
                     info!("✅ 配置已更新:");
                     if api_key_changed {
                         info!(
@@ -117,14 +127,18 @@ impl AtomicConfig {
                     if host_changed {
                         info!("host: {} → {}", old.host, new_config.host);
                     }
+                    if path_changed {
+                        info!("path: {} → {}", old.path, new_config.path);
+                    }
                 } else {
                     info!("ℹ️ 配置文件内容未变化");
                 }
 
                 info!(
-                    "📋 当前配置: api_key={}***, host={}",
+                    "📋 当前配置: api_key={}***, host={}, path={}",
                     new_config.api_key.chars().take(8).collect::<String>(),
-                    new_config.host
+                    new_config.host,
+                    new_config.path
                 );
             }
             Err(e) => {

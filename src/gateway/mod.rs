@@ -78,8 +78,53 @@ impl ProxyHttp for Gateway {
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
         let cfg = self.config.get();
+
+        // 打印原始请求路径
+        info!("🔍 原始请求路径: {}", req.uri);
+
+        // 打印请求头
+        info!("🔍 请求方法: {}", req.method);
+        info!("🔍 请求完整 URI: {:?}", req.uri);
+        info!("🔍 URI path: {}", req.uri.path());
+        if let Some(query) = req.uri.query() {
+            info!("🔍 URI query: {}", query);
+        }
+
+        // 重写请求路径为配置中的 path
+        let uri: http::Uri = cfg.path.parse().unwrap_or_else(|_| {
+            tracing::warn!("Invalid path URI: {}", cfg.path);
+            http::Uri::default()
+        });
+        info!("🔍 配置中的目标 path: {}", cfg.path);
+        info!("🔍 解析后的 URI: {}", uri);
+        let original_uri = &req.uri;
+        let original_path = original_uri
+            .path_and_query()
+            .map_or("", http::uri::PathAndQuery::as_str);
+
+        // 2. 检查原始路径是否已经以配置的 path 开头
+        // 如果已经以 /api/anthropic 开头，就不需要再加前缀
+        if !original_path.starts_with(cfg.path.as_str()) {
+            // 3. 拼接新路径：配置的 path + 原始路径
+            // 例如: /api/anthropic + /v1/messages = /api/anthropic/v1/messages
+            let new_path = if original_path.starts_with('/') {
+                format!("{}{}", cfg.path.as_str(), original_path)
+            } else {
+                format!("{}/{}", cfg.path.as_str(), original_path)
+            };
+
+            info!("路径重写: {} -> {}", original_path, new_path);
+
+            // 4. 设置新的 URI
+            req.set_uri(new_path.parse().unwrap_or_else(|_| original_uri.clone()));
+        }
+        // req.set_uri(original_uri + uri);
+
         req.insert_header("host", cfg.host.as_str())?;
         req.insert_header("Authorization", cfg.api_key.as_str())?;
+
+        // 打印修改后的 URI
+        info!("🔍 修改后 URI: {}", req.uri);
 
         Ok(())
     }
