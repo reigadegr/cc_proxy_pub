@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, atomic::AtomicU64},
     time::Duration,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 // 每个请求的上下文，用来攒 body chunks
 pub struct BodyBuffers {
@@ -97,24 +97,32 @@ impl ProxyHttp for Gateway {
         });
         info!("🔍 配置中的目标 path: {}", cfg.path);
         info!("🔍 解析后的 URI: {}", uri);
-        let original_uri = &req.uri;
-        let original_path = original_uri
+
+        // 改成 to_string() 复制出来，不借用 req
+        let original_uri = req
+            .uri
             .path_and_query()
-            .map_or("", http::uri::PathAndQuery::as_str);
+            .map_or(String::new(), |p| p.as_str().to_string());
 
         // 拼接新路径：配置的 path + 原始路径
         // 例如: /api/anthropic + /v1/messages = /api/anthropic/v1/messages
-        let mut new_path = format!("{}/{}", cfg.path.as_str(), original_path);
+        let mut new_path = format!("{}/{}", cfg.path.as_str(), original_uri);
 
         // 移除所有连续斜杠
         while new_path.contains("//") {
             new_path = new_path.replace("//", "/");
         }
 
-        info!("路径重写: {} -> {}", original_path, new_path);
-
         // 设置新的 URI
-        req.set_uri(new_path.parse().unwrap_or_else(|_| original_uri.clone()));
+
+        // ... 后面的代码保持不变 ...
+        match new_path.parse::<http::Uri>() {
+            Ok(uri) => {
+                req.set_uri(uri);
+                info!("路径重写: {} -> {}", original_uri, new_path);
+            }
+            Err(e) => warn!("路径未重写: {}", e),
+        }
 
         req.insert_header("host", cfg.host.as_str())?;
         req.insert_header("Authorization", cfg.api_key.as_str())?;

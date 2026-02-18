@@ -1,3 +1,3 @@
-api_key = "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M"
+api_key = "<your_api_key>"
 host = "open.bigmodel.cn"
 path = "/api/anthropic"
