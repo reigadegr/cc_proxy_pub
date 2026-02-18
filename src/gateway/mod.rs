@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, atomic::AtomicU64},
     time::Duration,
 };
-use tracing::{info, warn};
+use tracing::info;
 
 // 每个请求的上下文，用来攒 body chunks
 pub struct BodyBuffers {
@@ -81,59 +81,43 @@ impl ProxyHttp for Gateway {
         req: &mut pingora::http::RequestHeader,
         _ctx: &mut Self::CTX,
     ) -> Result<()> {
-        let _cfg = self.config.get();
-
-        // 打印原始请求路径
-        info!("🔍 原始请求路径: {}", req.uri);
-
-        // 打印请求头
-        info!("🔍 请求方法: {}", req.method);
-        info!("🔍 请求完整 URI: {:?}", req.uri);
-        info!("🔍 URI path: {}", req.uri.path());
-        if let Some(query) = req.uri.query() {
-            info!("🔍 URI query: {}", query);
-        }
-
+        // 1. 只获取一次配置
         let cfg = self.config.get();
         let endpoint = &cfg.endpoint;
-        let host_str = endpoint.replace("https://", "");
-        let base_path = host_str.find('/').map_or("/", |i| &host_str[i..]);
 
+        // 2. 只处理一次 endpoint，同时提取 host 和 base_path
+        let host_str = endpoint.strip_prefix("https://").unwrap_or(endpoint);
+        let (host, base_path) = host_str
+            .split_once('/')
+            .map_or((host_str, "/"), |(h, p)| (h, p));
+
+        // 3. 精简调试日志
+        info!("🔍 {} {}", req.method, req.uri);
+
+        // 路径重写
         let original_uri = req
             .uri
             .path_and_query()
             .map_or(String::new(), |p| p.as_str().to_string());
 
-        // 拼接新路径：配置的 path + 原始路径
-        // 例如: /api/anthropic + /v1/messages = /api/anthropic/v1/messages
-        let mut new_path = format!("{base_path}/{original_uri}");
+        let mut new_path = format!("/{base_path}/{original_uri}");
 
         // 移除所有连续斜杠
         while new_path.contains("//") {
             new_path = new_path.replace("//", "/");
         }
-
-        // 设置新的 URI
         match new_path.parse::<http::Uri>() {
             Ok(uri) => {
                 req.set_uri(uri);
                 info!("路径重写: {} -> {}", original_uri, new_path);
             }
-            Err(e) => warn!("路径未重写: {}", e),
+            Err(e) => info!("路径未重写: {}", e),
         }
-
-        let cfg = self.config.get();
-        let endpoint = &cfg.endpoint;
-        let host_str = endpoint.replace("https://", "");
-        let host = host_str
-            .split_once('/')
-            .map_or(host_str.as_str(), |(h, _)| h);
-        info!("host={host}");
+        // 合并请求头设置
         req.insert_header("host", host)?;
         req.insert_header("Authorization", cfg.api_key.as_str())?;
 
-        // 打印修改后的 URI
-        info!("🔍 修改后 URI: {}", req.uri);
+        info!("最终 URI: {}", req.uri);
 
         Ok(())
     }
