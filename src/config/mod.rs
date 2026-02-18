@@ -3,34 +3,29 @@ pub mod format;
 use arc_swap::{ArcSwap, Guard};
 use format::format_toml;
 use serde::{Deserialize, Serialize};
-use std::{env, fs, sync::Arc, time::Duration};
+use std::{env, fs, path::Path, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{error, info, warn};
 
 /// 全局原子配置，支持热重载
 pub struct AtomicConfig {
     inner: ArcSwap<Config>,
-    config_path: String,
+    config_path: PathBuf,
 }
 
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// 上游主机地址+路径
-    #[serde(default = "default_point")]
     pub endpoint: String,
     /// API 密钥
     pub api_key: String,
-}
-
-fn default_point() -> String {
-    "https://open.bigmodel.cn/api/anthropic".to_string()
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             api_key: "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M".to_string(),
-            endpoint: default_point(),
+            endpoint: "https://open.bigmodel.cn/api/anthropic".to_string(),
         }
     }
 }
@@ -39,8 +34,7 @@ impl AtomicConfig {
     /// 初始化配置，从指定路径或默认路径加载
     pub fn init() -> Self {
         let config_path = env::args()
-            .nth(1)
-            .unwrap_or_else(|| "config.toml".to_string());
+            .nth(1).map_or_else(|| PathBuf::from("config.toml"), PathBuf::from);
 
         info!("📂 正在加载配置文件: {:?}", config_path);
 
@@ -69,9 +63,9 @@ impl AtomicConfig {
     }
 
     /// 从文件加载配置
-    fn load_from_file(path: &str) -> Result<Config, String> {
-        let content =
-            fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {e}"))?;
+    fn load_from_file(path: impl AsRef<Path>) -> Result<Config, String> {
+        let content = fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("Failed to read config file: {e}"))?;
 
         let config: Config =
             toml::from_str(&content).map_err(|e| format!("Failed to parse TOML: {e}"))?;
