@@ -1,5 +1,5 @@
-use crate::Gateway;
-use pingora::http::RequestHeader;
+use crate::gateway::RequestStats;
+use http::HeaderMap;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 use tracing::{info, warn};
@@ -180,21 +180,19 @@ pub fn log_full_response(body: &str) {
     info!("=== 响应体结束 ===");
 }
 
-pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
+pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
     let (total, user_new, user_hist, assistant, system) = analyze_request_body(body_str);
 
-    gateway.total_tokens.fetch_add(total, Ordering::Relaxed);
-    gateway
-        .user_new_tokens
-        .fetch_add(user_new, Ordering::Relaxed);
-    gateway
+    stats.total_tokens.fetch_add(total, Ordering::Relaxed);
+    stats.user_new_tokens.fetch_add(user_new, Ordering::Relaxed);
+    stats
         .user_history_tokens
         .fetch_add(user_hist, Ordering::Relaxed);
-    gateway
+    stats
         .assistant_tokens
         .fetch_add(assistant, Ordering::Relaxed);
-    gateway.system_tokens.fetch_add(system, Ordering::Relaxed);
-    let count = gateway.request_count.fetch_add(1, Ordering::Relaxed) + 1;
+    stats.system_tokens.fetch_add(system, Ordering::Relaxed);
+    let count = stats.request_count.fetch_add(1, Ordering::Relaxed) + 1;
 
     let waste = user_hist + assistant + system;
     let waste_ratio = if user_new > 0 {
@@ -208,11 +206,11 @@ pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
         total, user_new, user_hist, assistant, system, waste_ratio
     );
 
-    let total_acc = gateway.total_tokens.load(Ordering::Relaxed);
-    let new_acc = gateway.user_new_tokens.load(Ordering::Relaxed);
-    let hist_acc = gateway.user_history_tokens.load(Ordering::Relaxed)
-        + gateway.assistant_tokens.load(Ordering::Relaxed);
-    let sys_acc = gateway.system_tokens.load(Ordering::Relaxed);
+    let total_acc = stats.total_tokens.load(Ordering::Relaxed);
+    let new_acc = stats.user_new_tokens.load(Ordering::Relaxed);
+    let hist_acc = stats.user_history_tokens.load(Ordering::Relaxed)
+        + stats.assistant_tokens.load(Ordering::Relaxed);
+    let sys_acc = stats.system_tokens.load(Ordering::Relaxed);
 
     warn!(
         "🔥 累计 {} 次 | 总: {} | 你: {} | 浪费: {} (历史:{} 系统:{}) | 平均浪费比: {:.1}:1",
@@ -231,13 +229,12 @@ pub fn calculate_tokens(gateway: &Gateway, body_str: &str) {
 }
 
 /// 打印全部请求头
-pub fn log_request_headers(req: &RequestHeader) {
+pub fn log_request_headers(method: &str, uri: &str, headers: &HeaderMap) {
     info!("=== 请求头 ===");
-    info!("Method: {}", req.method);
-    info!("URI: {}", req.uri);
-    info!("Version: {:?}", req.version);
+    info!("Method: {}", method);
+    info!("URI: {}", uri);
 
-    for (name, value) in &req.headers {
+    for (name, value) in headers {
         if let Ok(value_str) = value.to_str() {
             info!("{}: {}", name, value_str);
         }

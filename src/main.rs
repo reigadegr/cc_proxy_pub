@@ -3,8 +3,9 @@ mod gateway;
 
 use chrono::Local;
 use config::AtomicConfig;
-use gateway::Gateway;
-use pingora::prelude::*;
+use gateway::{GatewayHandler, handler::proxy_handler};
+use salvo::affix_state;
+use salvo::prelude::*;
 use std::fmt;
 use std::io::IsTerminal;
 use std::sync::Arc;
@@ -25,7 +26,8 @@ impl FormatTime for LoggerFormatter {
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // 初始化日志
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
@@ -53,13 +55,19 @@ fn main() -> Result<()> {
     // 启动配置文件监听线程
     Arc::clone(&atomic_config).start_watcher();
 
-    let mut my_server = Server::new(None)?;
-    my_server.bootstrap();
+    // 创建 gateway handler
+    let gateway = GatewayHandler::new();
 
-    let mut proxy_service =
-        http_proxy_service(&my_server.configuration, Gateway::new(atomic_config));
-    proxy_service.add_tcp("0.0.0.0:9066");
+    // 构建路由 - 使用 affix_state::inject 注入共享状态
+    let router = Router::new()
+        .hoop(affix_state::inject(atomic_config).inject(Arc::clone(gateway.stats())))
+        .push(Router::with_path("{**rest}").goal(proxy_handler));
 
-    my_server.add_service(proxy_service);
-    my_server.run_forever();
+    // 启动服务器
+    let acceptor = TcpListener::new("0.0.0.0:9066").bind().await;
+    info!("Server listening on 0.0.0.0:9066");
+
+    Server::new(acceptor).serve(router).await;
+
+    Ok(())
 }

@@ -2,6 +2,7 @@ pub mod format;
 
 use arc_swap::{ArcSwap, Guard};
 use format::format_toml;
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::Path, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{error, info, warn};
@@ -134,43 +135,47 @@ impl AtomicConfig {
         }
     }
 
-    /// 启动配置文件监听线程（inotify）
+    /// 启动配置文件监听（跨平台）
     ///
-    /// 使用 `CLOSE_WRITE` 事件监听文件变更，当文件被修改时自动重载
+    /// 使用 `notify` crate 实现跨平台文件监听，支持 Windows/Linux/macOS
+    /// 当文件被修改时自动重载配置
     pub fn start_watcher(self: Arc<Self>) {
         std::thread::spawn(move || {
-            let mut inotify = match inotify::Inotify::init() {
-                Ok(i) => i,
-                Err(e) => {
-                    error!("Failed to initialize inotify: {}", e);
-                    return;
-                }
-            };
-
             let config_path = self.config_path.clone();
 
-            // 添加 watch，监听文件关闭写入事件
-            if let Err(e) = inotify
-                .watches()
-                .add(&config_path, inotify::WatchMask::CLOSE_WRITE)
-            {
+            // 创建跨平台 watcher
+            let mut watcher =
+                match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                    match res {
+                        Ok(event) => {
+                            // 监听文件修改和创建事件
+                            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                                // 添加短暂延迟，避免重复触发
+                                std::thread::sleep(Duration::from_millis(50));
+                                self.reload();
+                            }
+                        }
+                        Err(e) => error!("Config watch error: {}", e),
+                    }
+                }) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        error!("Failed to initialize watcher: {}", e);
+                        return;
+                    }
+                };
+
+            // 添加监听
+            if let Err(e) = watcher.watch(&config_path, RecursiveMode::NonRecursive) {
                 error!("Failed to add watch for config file: {}", e);
                 return;
             }
 
             info!("👁️  配置文件监听已启动: {:?}", config_path);
 
+            // 保持 watcher 不被 drop
             loop {
-                match inotify.read_events_blocking(&mut [0; 1024]) {
-                    Ok(_) => {
-                        // 检测到文件变更，触发重载
-                        self.reload();
-                    }
-                    Err(e) => {
-                        error!("Failed to read inotify events: {}", e);
-                        std::thread::sleep(Duration::from_secs(1));
-                    }
-                }
+                std::thread::sleep(Duration::from_secs(3600));
             }
         });
     }
