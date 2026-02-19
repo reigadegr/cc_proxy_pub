@@ -22,6 +22,13 @@ pub struct Config {
     pub endpoint: String,
     /// API 密钥
     pub api_key: String,
+    /// 模型名称（覆盖请求体中的 model 字段）
+    #[serde(default = "default_model")]
+    pub model: String,
+}
+
+const fn default_model() -> String {
+    String::new()
 }
 
 impl AtomicConfig {
@@ -52,7 +59,7 @@ impl AtomicConfig {
             config.api_key.chars().take(8).collect::<String>()
         );
         info!("endpoint = {}", config.endpoint);
-
+        info!("model = {}", config.model);
         Self {
             inner: ArcSwap::from(Arc::new(config)),
             config_path,
@@ -82,15 +89,6 @@ impl AtomicConfig {
 
         info!("🔄 检测到配置文件变更，正在重新加载...");
 
-        // 读取原始内容并格式化
-        let _raw_content = match fs::read_to_string(&self.config_path) {
-            Ok(content) => content,
-            Err(e) => {
-                error!("❌ 读取配置文件失败: {}", e);
-                return;
-            }
-        };
-
         match Self::load_from_file(&self.config_path) {
             Ok(new_config) => {
                 let old = self.inner.load();
@@ -98,10 +96,11 @@ impl AtomicConfig {
                 // 检测配置是否真的发生了变化
                 let api_key_changed = old.api_key != new_config.api_key;
                 let endpoint_changed = old.endpoint != new_config.endpoint;
+                let model_changed = old.model != new_config.model;
 
                 self.inner.store(Arc::new(new_config.clone()));
 
-                if api_key_changed || endpoint_changed {
+                if api_key_changed || endpoint_changed || model_changed {
                     info!("✅ 配置已更新:");
                     if api_key_changed {
                         info!(
@@ -113,6 +112,9 @@ impl AtomicConfig {
 
                     if endpoint_changed {
                         info!("endpoint: {} → {}", old.endpoint, new_config.endpoint);
+                    }
+                    if model_changed {
+                        info!("model: {} → {}", old.model, new_config.model);
                     }
                 } else {
                     info!("ℹ️ 配置文件内容未变化");

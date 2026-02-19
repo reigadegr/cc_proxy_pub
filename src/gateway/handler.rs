@@ -46,6 +46,22 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         }
     };
 
+    // 修改请求体中的 model 字段（如果配置中有设置）
+    let body_bytes = if !cfg.model.is_empty() && !body_bytes.is_empty() {
+        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+            if let Some(original_model) = json.get("model").and_then(|m| m.as_str()) {
+                tracing::info!("原始 model: {} -> 覆盖为: {}", original_model, cfg.model);
+            }
+            let mut modified_json = json;
+            modified_json["model"] = serde_json::json!(cfg.model);
+            serde_json::to_vec(&modified_json).map_or(body_bytes, std::convert::Into::into)
+        } else {
+            body_bytes
+        }
+    } else {
+        body_bytes
+    };
+
     // 记录请求体并计算 token
     if !body_bytes.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&body_bytes)
@@ -97,10 +113,10 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         .method(req.method())
         .uri(&upstream_url);
 
-    // 复制请求头（跳过 host 和 authorization，会使用配置中的 api_key）
+    // 复制请求头（跳过 host、authorization 和 content-length，会重新计算）
     for (name, value) in req.headers() {
         let name_str = name.as_str();
-        if name_str != "host" && name_str != "authorization" {
+        if name_str != "host" && name_str != "authorization" && name_str != "content-length" {
             proxy_req_builder = proxy_req_builder.header(name, value);
         }
     }
@@ -109,6 +125,9 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     proxy_req_builder =
         proxy_req_builder.header("Authorization", format!("Bearer {}", cfg.api_key));
     proxy_req_builder = proxy_req_builder.header("host", host);
+
+    // 设置正确的 Content-Length（基于修改后的 body 大小）
+    proxy_req_builder = proxy_req_builder.header("content-length", body_bytes.len());
 
     // 设置请求体
     let proxy_req = match proxy_req_builder.body(Full::new(body_bytes.clone())) {
