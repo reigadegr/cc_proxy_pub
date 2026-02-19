@@ -1,2 +1,2 @@
 endpoint = "https://open.bigmodel.cn/api/anthropic"
-api_key = "<your_api_key>"
+api_keys = ["your_api_key1", "your_api_key2"]

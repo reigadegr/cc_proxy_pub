@@ -1,4 +1,4 @@
-taplo fmt Cargo.toml */*.toml */*/*.toml
+taplo fmt *.toml */*.toml */*/*.toml
 export RUSTFLAGS="
     -C link-arg=-fuse-ld=mold
     -C link-args=-Wl,--gc-sections,--as-needed

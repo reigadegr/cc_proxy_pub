@@ -44,6 +44,21 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
     let cfg = config.get();
 
+    // 使用 LRU 选择器获取 API key（负载均衡）
+    let api_key = if let Some(selector) = config.get_api_key_selector() {
+        let key = selector.next_key();
+        // 打印选择的 API key（脱敏显示前 8 位）
+        tracing::info!(
+            "🔑 选中的 API Key: {}***",
+            key.chars().take(8).collect::<String>()
+        );
+        key
+    } else {
+        tracing::error!("No API keys configured");
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        return;
+    };
+
     // 记录请求头
     log_request_headers(
         req.method().as_str(),
@@ -128,8 +143,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
 
     // 注入 Authorization
-    proxy_req_builder =
-        proxy_req_builder.header("Authorization", format!("Bearer {}", cfg.api_key));
+    proxy_req_builder = proxy_req_builder.header("Authorization", format!("Bearer {api_key}"));
     proxy_req_builder = proxy_req_builder.header("host", host);
 
     // 设置正确的 Content-Length（基于修改后的 body 大小）

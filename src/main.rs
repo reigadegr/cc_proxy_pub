@@ -1,3 +1,4 @@
+mod api_key_selector;
 mod config;
 mod gateway;
 
@@ -41,15 +42,11 @@ async fn main() -> anyhow::Result<()> {
 
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
+    let cfg = atomic_config.get();
     info!(
-        "Initial config: api_key={}***, endpoint={}",
-        atomic_config
-            .get()
-            .api_key
-            .chars()
-            .take(8)
-            .collect::<String>(),
-        atomic_config.get().endpoint
+        "Initial config: {} api_key(s), endpoint={}",
+        cfg.api_keys.len(),
+        cfg.endpoint
     );
 
     // 启动配置文件监听线程
