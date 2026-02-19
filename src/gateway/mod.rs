@@ -72,7 +72,12 @@ impl ProxyHttp for Gateway {
         let host = host_str
             .split_once('/')
             .map_or(host_str.as_str(), |(h, _)| h);
-        let peer = Box::new(HttpPeer::new((host, 443u16), true, host.to_string()));
+
+        let peer = if endpoint.starts_with("https://") {
+            Box::new(HttpPeer::new((host, 443u16), true, host.to_string()))
+        } else {
+            Box::new(HttpPeer::new((host, 80u16), false, host.to_string()))
+        };
         Ok(peer)
     }
 
