@@ -5,8 +5,7 @@ use super::{
 use crate::config::AtomicConfig;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::Request as HyperRequest;
-use hyper::{Response as HyperResponse, body::Incoming};
+use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;

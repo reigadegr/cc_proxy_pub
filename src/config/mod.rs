@@ -2,8 +2,10 @@ pub mod format;
 
 use arc_swap::{ArcSwap, Guard};
 use format::format_toml;
+use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::process;
 use std::{env, fs, path::Path, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{error, info, warn};
 
@@ -22,15 +24,6 @@ pub struct Config {
     pub api_key: String,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            api_key: "35d84af820c343659f5abe82389bea60.f9PeMuu8jgqo1Z4M".to_string(),
-            endpoint: "https://open.bigmodel.cn/api/anthropic".to_string(),
-        }
-    }
-}
-
 impl AtomicConfig {
     /// 初始化配置，从指定路径或默认路径加载
     pub fn init() -> Self {
@@ -47,8 +40,8 @@ impl AtomicConfig {
         let _ = fs::write(&config_path, formatted_content);
 
         let config = Self::load_from_file(&config_path).unwrap_or_else(|e| {
-            warn!("⚠️  配置加载失败: {}，使用默认配置", e);
-            Config::default()
+            warn!("⚠️  配置加载失败: {}，退出中", e);
+            process::exit(1); // 非零退出码表示异常退出
         });
 
         info!("✅ 配置已加载:");
@@ -149,7 +142,11 @@ impl AtomicConfig {
                     match res {
                         Ok(event) => {
                             // 监听文件修改和创建事件
-                            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+
+                            if matches!(
+                                event.kind,
+                                EventKind::Access(AccessKind::Close(AccessMode::Write))
+                            ) {
                                 // 添加短暂延迟，避免重复触发
                                 std::thread::sleep(Duration::from_millis(50));
                                 self.reload();
