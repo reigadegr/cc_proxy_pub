@@ -126,7 +126,8 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         "http"
     };
     let upstream_url = format!("{scheme}://{host}{new_path}");
-
+    // let upstream_url = upstream_url.replace("messages", "responses");
+    let upstream_url = upstream_url.replace("?beta=true", "");
     tracing::info!("Proxying to: {}", upstream_url);
 
     // 构建代理请求
