@@ -44,7 +44,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
     let cfg = config.get();
 
-    // 使用 LRU 选择器获取 API key（负载均衡）
+    // 使用 round-robin 选择器获取 API key（负载均衡）
     let api_key = if let Some(selector) = config.get_api_key_selector() {
         let key = selector.next_key();
         // 打印选择的 API key（脱敏显示前 8 位）

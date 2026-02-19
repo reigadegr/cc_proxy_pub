@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 pub struct AtomicConfig {
     inner: ArcSwap<Config>,
     config_path: PathBuf,
-    /// API Key 选择器（使用 LRU 策略实现负载均衡）
+    /// API Key 选择器（使用 round-robin 策略实现负载均衡）
     api_key_selector: ArcSwap<Option<Arc<ApiKeySelector>>>,
 }
 

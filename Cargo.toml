@@ -34,7 +34,6 @@ hyper-rustls = { version = "0.27.7", features = [
   "webpki-roots",
 ] }
 hyper-util = { version = "0.1.20", features = ["full"] }
-lru = "0.16.3"
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 notify = "8.2"
 salvo = { version = "0.89.1", features = ["proxy", "affix-state"] }
