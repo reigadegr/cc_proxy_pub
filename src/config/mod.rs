@@ -34,7 +34,8 @@ impl AtomicConfig {
     /// 初始化配置，从指定路径或默认路径加载
     pub fn init() -> Self {
         let config_path = env::args()
-            .nth(1).map_or_else(|| PathBuf::from("config.toml"), PathBuf::from);
+            .nth(1)
+            .map_or_else(|| PathBuf::from("config.toml"), PathBuf::from);
 
         info!("📂 正在加载配置文件: {:?}", config_path);
 

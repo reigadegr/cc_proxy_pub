@@ -68,6 +68,7 @@ impl ProxyHttp for Gateway {
         let cfg = self.config.get();
         let endpoint = &cfg.endpoint;
         let host_str = endpoint.replace("https://", "");
+        let host_str = host_str.replace("http://", "");
         let host = host_str
             .split_once('/')
             .map_or(host_str.as_str(), |(h, _)| h);
