@@ -37,7 +37,9 @@ impl AtomicConfig {
 
         // 格式化TOML并写回文件
         let formatted_content = format_toml(&raw_content);
-        let _ = fs::write(&config_path, formatted_content);
+        if let Err(e) = fs::write(&config_path, formatted_content) {
+            warn!("写入格式化配置失败: {}", e);
+        }
 
         let config = Self::load_from_file(&config_path).unwrap_or_else(|e| {
             warn!("⚠️  配置加载失败: {}，退出中", e);
@@ -141,13 +143,10 @@ impl AtomicConfig {
                 match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                     match res {
                         Ok(event) => {
-                            // 监听文件修改和创建事件
-
                             if matches!(
                                 event.kind,
                                 EventKind::Access(AccessKind::Close(AccessMode::Write))
                             ) {
-                                // 添加短暂延迟，避免重复触发
                                 std::thread::sleep(Duration::from_millis(50));
                                 self.reload();
                             }
@@ -170,10 +169,8 @@ impl AtomicConfig {
 
             info!("👁️  配置文件监听已启动: {:?}", config_path);
 
-            // 保持 watcher 不被 drop
-            loop {
-                std::thread::sleep(Duration::from_secs(3600));
-            }
+            // 永久挂起线程，保 watcher 不被 drop
+            std::thread::park();
         });
     }
 }

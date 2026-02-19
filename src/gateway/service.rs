@@ -129,9 +129,7 @@ pub fn log_full_body(body: &str) {
 
             // 🔑 关键修复：确保结束位置是字符边界（UTF-8 safe）
             // 如果不是字符边界，向前调整直到是边界
-            while end < len && !body.is_char_boundary(end) {
-                end -= 1;
-            }
+            end = body.floor_char_boundary(end);
 
             // 安全切片（get 返回 Option，不会 panic）
             if let Some(chunk) = body.get(start..end) {

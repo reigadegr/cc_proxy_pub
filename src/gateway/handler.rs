@@ -44,12 +44,13 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             return;
         }
     };
-    let body_str = String::from_utf8_lossy(&body_bytes);
 
     // 记录请求体并计算 token
-    if !body_str.is_empty() {
-        log_full_body(&body_str);
-        calculate_tokens(stats, &body_str);
+    if !body_bytes.is_empty()
+        && let Ok(body_str) = std::str::from_utf8(&body_bytes)
+    {
+        log_full_body(body_str);
+        calculate_tokens(stats, body_str);
     }
 
     // 解析 endpoint
@@ -109,7 +110,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     proxy_req_builder = proxy_req_builder.header("host", host);
 
     // 设置请求体
-    let proxy_req = match proxy_req_builder.body(Full::new(Bytes::from(body_bytes.to_vec()))) {
+    let proxy_req = match proxy_req_builder.body(Full::new(body_bytes.clone())) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!("Failed to build proxy request: {}", e);
