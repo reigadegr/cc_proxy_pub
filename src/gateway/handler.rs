@@ -8,6 +8,21 @@ use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::prelude::*;
 use std::sync::Arc;
 
+/// 尝试覆盖请求体中的 model 字段
+fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes> {
+    let json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
+    let original_model = json.get("model").and_then(|m| m.as_str());
+
+    if let Some(original) = original_model {
+        tracing::info!("原始 model: {} -> 覆盖为: {}", original, model);
+    }
+
+    let mut modified = json;
+    modified["model"] = serde_json::json!(model);
+
+    serde_json::to_vec(&modified).ok().map(Into::into)
+}
+
 /// 代理请求 handler
 #[handler]
 pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Response) {
@@ -48,16 +63,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
 
     // 修改请求体中的 model 字段（如果配置中有设置）
     let body_bytes = if !cfg.model.is_empty() && !body_bytes.is_empty() {
-        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-            if let Some(original_model) = json.get("model").and_then(|m| m.as_str()) {
-                tracing::info!("原始 model: {} -> 覆盖为: {}", original_model, cfg.model);
-            }
-            let mut modified_json = json;
-            modified_json["model"] = serde_json::json!(cfg.model);
-            serde_json::to_vec(&modified_json).map_or(body_bytes, std::convert::Into::into)
-        } else {
-            body_bytes
-        }
+        override_model_in_body(&body_bytes, &cfg.model).unwrap_or(body_bytes)
     } else {
         body_bytes
     };
