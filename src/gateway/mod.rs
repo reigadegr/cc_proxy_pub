@@ -7,7 +7,6 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use std::{sync::Arc, sync::atomic::AtomicU64};
-use anyhow::Context;
 
 /// Token 统计
 pub struct RequestStats {
@@ -42,21 +41,21 @@ pub struct GatewayHandler {
 }
 
 impl GatewayHandler {
-    pub fn new() -> anyhow::Result<Self> {
-        // 创建支持 HTTP 和 HTTPS 的连接器（复用）
+    pub fn new() -> Self {
+        // 创建支持 HTTP 和 HTTPS 的连接器
+        // 使用 webpki-roots 内置证书，不依赖系统证书，提高跨平台稳定性
         let https = HttpsConnectorBuilder::new()
-            .with_native_roots()
-            .context("failed to load native root certificates")?
+            .with_webpki_roots()
             .https_or_http()
             .enable_http1()
             .build();
 
         let client = Client::builder(TokioExecutor::new()).build(https);
 
-        Ok(Self {
+        Self {
             stats: Arc::new(RequestStats::default()),
             client: Arc::new(client),
-        })
+        }
     }
 
     pub const fn stats(&self) -> &Arc<RequestStats> {
