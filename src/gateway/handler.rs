@@ -1,21 +1,17 @@
 use super::{
-    RequestStats,
+    HttpClient, RequestStats,
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
-use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
-use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
 use salvo::prelude::*;
 use std::sync::Arc;
 
 /// 代理请求 handler
 #[handler]
 pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    // 获取配置和统计
+    // 获取配置、统计和 HTTP 客户端
     let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
         tracing::error!("AtomicConfig not found in depot");
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
@@ -23,6 +19,11 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
     let Ok(stats) = depot.obtain::<Arc<RequestStats>>() else {
         tracing::error!("RequestStats not found in depot");
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        return;
+    };
+    let Ok(client) = depot.obtain::<Arc<HttpClient>>() else {
+        tracing::error!("HttpClient not found in depot");
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
         return;
     };
@@ -119,18 +120,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         }
     };
 
-    // 创建支持 HTTP 和 HTTPS 的客户端
-    let https = match HttpsConnectorBuilder::new().with_native_roots() {
-        Ok(builder) => builder.https_or_http().enable_http1().build(),
-        Err(e) => {
-            tracing::error!("Failed to load native TLS root certificates: {}", e);
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            return;
-        }
-    };
-    let client: Client<_, http_body_util::Full<Bytes>> =
-        Client::builder(TokioExecutor::new()).build(https);
-
+    // 使用共享的 HTTP 客户端发送请求
     match client.request(proxy_req).await {
         Ok(proxy_resp) => {
             let proxy_resp: HyperResponse<Incoming> = proxy_resp;

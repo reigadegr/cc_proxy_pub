@@ -1,6 +1,7 @@
 mod config;
 mod gateway;
 
+use anyhow::Context;
 use chrono::Local;
 use config::AtomicConfig;
 use gateway::{GatewayHandler, handler::proxy_handler};
@@ -55,12 +56,17 @@ async fn main() -> anyhow::Result<()> {
     // 启动配置文件监听线程
     Arc::clone(&atomic_config).start_watcher();
 
-    // 创建 gateway handler
-    let gateway = GatewayHandler::new();
+    // 创建 gateway handler（包含复用的 HTTP 客户端）
+    let gateway = GatewayHandler::new()
+        .context("failed to initialize gateway handler")?;
 
     // 构建路由 - 使用 affix_state::inject 注入共享状态
     let router = Router::new()
-        .hoop(affix_state::inject(atomic_config).inject(Arc::clone(gateway.stats())))
+        .hoop(
+            affix_state::inject(atomic_config)
+                .inject(Arc::clone(gateway.stats()))
+                .inject(Arc::clone(gateway.client())),
+        )
         .push(Router::with_path("{**rest}").goal(proxy_handler));
 
     // 启动服务器
