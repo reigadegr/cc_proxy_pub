@@ -45,8 +45,8 @@ async fn main() -> anyhow::Result<()> {
     let cfg = atomic_config.get();
     info!(
         "Initial config: {} api_key(s), endpoint={}",
-        cfg.api_keys.len(),
-        cfg.endpoint
+        cfg.upstream.api_keys.len(),
+        cfg.upstream.endpoint
     );
 
     // 启动配置文件监听线程

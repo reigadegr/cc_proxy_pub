@@ -64,14 +64,14 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
 
     // 修改请求体中的 model 字段（如果配置中有设置）
-    let body_bytes = if !cfg.model.is_empty() && !body_bytes.is_empty() {
-        override_model_in_body(&body_bytes, &cfg.model).unwrap_or(body_bytes)
+    let body_bytes = if !cfg.upstream.model.is_empty() && !body_bytes.is_empty() {
+        override_model_in_body(&body_bytes, &cfg.upstream.model).unwrap_or(body_bytes)
     } else {
         body_bytes
     };
 
     if let Some(local_response) =
-        try_local_optimization(&body_bytes, &cfg.optimizations, cfg.model.as_str())
+        try_local_optimization(&body_bytes, &cfg.optimizations, cfg.upstream.model.as_str())
     {
         tracing::info!("✅ 本地优化命中: {}", local_response.reason);
 
@@ -118,7 +118,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
 
     // 解析 endpoint
-    let endpoint = &cfg.endpoint;
+    let endpoint = &cfg.upstream.endpoint;
     let host_str = endpoint
         .strip_prefix("https://")
         .or_else(|| endpoint.strip_prefix("http://"))
