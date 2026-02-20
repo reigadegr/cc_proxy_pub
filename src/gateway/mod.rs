@@ -1,4 +1,5 @@
 pub mod handler;
+pub mod optimization;
 pub mod service;
 
 use bytes::Bytes;

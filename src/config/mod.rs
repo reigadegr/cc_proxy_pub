@@ -29,6 +29,36 @@ pub struct Config {
     /// 模型名称（覆盖请求体中的 model 字段）
     #[serde(default = "default_model")]
     pub model: String,
+    /// 本地优化拦截开关
+    #[serde(default)]
+    pub optimizations: OptimizationConfig,
+}
+
+/// 本地优化配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OptimizationConfig {
+    #[serde(default = "default_true")]
+    pub enable_network_probe_mock: bool,
+    #[serde(default = "default_true")]
+    pub enable_fast_prefix_detection: bool,
+    #[serde(default = "default_true")]
+    pub enable_title_generation_skip: bool,
+    #[serde(default = "default_true")]
+    pub enable_suggestion_mode_skip: bool,
+    #[serde(default = "default_true")]
+    pub enable_filepath_extraction_mock: bool,
+}
+
+impl Default for OptimizationConfig {
+    fn default() -> Self {
+        Self {
+            enable_network_probe_mock: default_true(),
+            enable_fast_prefix_detection: default_true(),
+            enable_title_generation_skip: default_true(),
+            enable_suggestion_mode_skip: default_true(),
+            enable_filepath_extraction_mock: default_true(),
+        }
+    }
 }
 
 // 向后兼容：如果只有一个 api_key 字段，自动转换为 api_keys 数组
@@ -38,6 +68,8 @@ struct ConfigLegacy {
     pub api_key: String,
     #[serde(default = "default_model")]
     pub model: String,
+    #[serde(default)]
+    pub optimizations: OptimizationConfig,
 }
 
 impl From<ConfigLegacy> for Config {
@@ -46,12 +78,17 @@ impl From<ConfigLegacy> for Config {
             endpoint: legacy.endpoint,
             api_keys: vec![legacy.api_key],
             model: legacy.model,
+            optimizations: legacy.optimizations,
         }
     }
 }
 
 const fn default_model() -> String {
     String::new()
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl AtomicConfig {
@@ -83,6 +120,14 @@ impl AtomicConfig {
         }
         info!("endpoint = {}", config.endpoint);
         info!("model = {}", config.model);
+        info!(
+            "optimizations: quota={}, prefix={}, title={}, suggestion={}, filepath={}",
+            config.optimizations.enable_network_probe_mock,
+            config.optimizations.enable_fast_prefix_detection,
+            config.optimizations.enable_title_generation_skip,
+            config.optimizations.enable_suggestion_mode_skip,
+            config.optimizations.enable_filepath_extraction_mock,
+        );
 
         // 创建 API Key 选择器
         let api_key_selector = if config.api_keys.is_empty() {
@@ -142,6 +187,7 @@ impl AtomicConfig {
                 let api_keys_changed = old.api_keys != new_config.api_keys;
                 let endpoint_changed = old.endpoint != new_config.endpoint;
                 let model_changed = old.model != new_config.model;
+                let optimizations_changed = old.optimizations != new_config.optimizations;
 
                 self.inner.store(Arc::new(new_config.clone()));
 
@@ -155,7 +201,7 @@ impl AtomicConfig {
                     self.api_key_selector.store(Arc::new(new_selector));
                 }
 
-                if api_keys_changed || endpoint_changed || model_changed {
+                if api_keys_changed || endpoint_changed || model_changed || optimizations_changed {
                     info!("✅ 配置已更新:");
                     if api_keys_changed {
                         info!(
@@ -170,6 +216,21 @@ impl AtomicConfig {
                     }
                     if model_changed {
                         info!("model: {} → {}", old.model, new_config.model);
+                    }
+                    if optimizations_changed {
+                        info!(
+                            "optimizations: quota {}→{}, prefix {}→{}, title {}→{}, suggestion {}→{}, filepath {}→{}",
+                            old.optimizations.enable_network_probe_mock,
+                            new_config.optimizations.enable_network_probe_mock,
+                            old.optimizations.enable_fast_prefix_detection,
+                            new_config.optimizations.enable_fast_prefix_detection,
+                            old.optimizations.enable_title_generation_skip,
+                            new_config.optimizations.enable_title_generation_skip,
+                            old.optimizations.enable_suggestion_mode_skip,
+                            new_config.optimizations.enable_suggestion_mode_skip,
+                            old.optimizations.enable_filepath_extraction_mock,
+                            new_config.optimizations.enable_filepath_extraction_mock,
+                        );
                     }
                 } else {
                     info!("ℹ️ 配置文件内容未变化");

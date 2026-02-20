@@ -1,0 +1,257 @@
+mod command_utils;
+mod detection;
+mod response_builder;
+
+use crate::config::OptimizationConfig;
+use serde_json::Value;
+
+pub use response_builder::OptimizationResponse;
+
+pub fn try_local_optimization(
+    body_bytes: &[u8],
+    flags: &OptimizationConfig,
+    fallback_model: &str,
+) -> Option<OptimizationResponse> {
+    let request: Value = serde_json::from_slice(body_bytes).ok()?;
+    let model = resolve_model(&request, fallback_model);
+
+    if flags.enable_network_probe_mock && detection::is_quota_check_request(&request) {
+        tracing::info!("Optimization: Intercepted and mocked quota probe");
+        return response_builder::build_text_response(
+            model.as_str(),
+            "Quota check passed.",
+            10,
+            5,
+            "quota_probe_mock",
+        );
+    }
+
+    if flags.enable_fast_prefix_detection
+        && let Some(command) = detection::detect_prefix_command(&request)
+    {
+        tracing::info!("Optimization: Handled fast prefix detection");
+        let prefix = command_utils::extract_command_prefix(command.as_str());
+        return response_builder::build_text_response(
+            model.as_str(),
+            prefix.as_str(),
+            100,
+            5,
+            "fast_prefix_detection",
+        );
+    }
+
+    if flags.enable_title_generation_skip && detection::is_title_generation_request(&request) {
+        tracing::info!("Optimization: Skipped title generation request");
+        return response_builder::build_text_response(
+            model.as_str(),
+            "Conversation",
+            100,
+            5,
+            "title_generation_skip",
+        );
+    }
+
+    if flags.enable_suggestion_mode_skip && detection::is_suggestion_mode_request(&request) {
+        tracing::info!("Optimization: Skipped suggestion mode request");
+        return response_builder::build_text_response(
+            model.as_str(),
+            "",
+            100,
+            1,
+            "suggestion_mode_skip",
+        );
+    }
+
+    if flags.enable_filepath_extraction_mock
+        && let Some((command, output)) = detection::detect_filepath_extraction_request(&request)
+    {
+        tracing::info!("Optimization: Mocked filepath extraction request");
+        let filepaths =
+            command_utils::extract_filepaths_from_command(command.as_str(), output.as_str());
+
+        return response_builder::build_text_response(
+            model.as_str(),
+            filepaths.as_str(),
+            100,
+            10,
+            "filepath_extraction_mock",
+        );
+    }
+
+    None
+}
+
+fn resolve_model(request: &Value, fallback_model: &str) -> String {
+    request
+        .get("model")
+        .and_then(Value::as_str)
+        .filter(|model| !model.is_empty())
+        .or_else(|| (!fallback_model.is_empty()).then_some(fallback_model))
+        .unwrap_or("unknown-model")
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::try_local_optimization;
+    use crate::config::OptimizationConfig;
+    use serde_json::{Value, json};
+
+    fn to_json_bytes(value: &Value) -> Vec<u8> {
+        serde_json::to_vec(value).unwrap_or_default()
+    }
+
+    fn require_optimization_response(
+        response: Option<super::OptimizationResponse>,
+        reason: &str,
+    ) -> super::OptimizationResponse {
+        let Some(response) = response else {
+            panic!("{reason}");
+        };
+        response
+    }
+
+    fn get_text_from_optimization_response(response_body: &[u8]) -> String {
+        let payload: Value = serde_json::from_slice(response_body).unwrap_or_default();
+        payload
+            .get("content")
+            .and_then(Value::as_array)
+            .and_then(|content| content.first())
+            .and_then(|block| block.get("text"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    #[test]
+    fn test_quota_probe_mock_hit() {
+        let request = json!({
+            "model": "claude-test",
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "quick quota probe"}]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            "quota probe should hit",
+        );
+
+        assert_eq!(response.reason, "quota_probe_mock");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "Quota check passed."
+        );
+    }
+
+    #[test]
+    fn test_prefix_detection_hit() {
+        let request = json!({
+            "model": "claude-test",
+            "messages": [{
+                "role": "user",
+                "content": "<policy_spec>strict</policy_spec>\nCommand: git commit -m 'feat'"
+            }]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            "prefix optimization should hit",
+        );
+
+        assert_eq!(response.reason, "fast_prefix_detection");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "git commit"
+        );
+    }
+
+    #[test]
+    fn test_title_generation_skip_hit() {
+        let request = json!({
+            "messages": [{
+                "role": "user",
+                "content": "Please write a 5-10 word title for this conversation"
+            }]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            "title optimization should hit",
+        );
+
+        assert_eq!(response.reason, "title_generation_skip");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "Conversation"
+        );
+    }
+
+    #[test]
+    fn test_suggestion_mode_skip_hit() {
+        let request = json!({
+            "messages": [{"role": "user", "content": "hi\n[SUGGESTION MODE: on]"}]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            "suggestion optimization should hit",
+        );
+
+        assert_eq!(response.reason, "suggestion_mode_skip");
+        assert_eq!(get_text_from_optimization_response(&response.body), "");
+    }
+
+    #[test]
+    fn test_filepath_extraction_mock_hit() {
+        let request = json!({
+            "messages": [{
+                "role": "user",
+                "content": "Command: cat foo.txt bar.md\nOutput: line1\nline2\n\nPlease extract <filepaths>."
+            }]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            "filepath optimization should hit",
+        );
+
+        assert_eq!(response.reason, "filepath_extraction_mock");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "<filepaths>\nfoo.txt\nbar.md\n</filepaths>"
+        );
+    }
+
+    #[test]
+    fn test_non_optimization_request_returns_none() {
+        let request = json!({
+            "messages": [{"role": "user", "content": "normal chat message"}]
+        });
+        let body = to_json_bytes(&request);
+
+        let response = try_local_optimization(&body, &OptimizationConfig::default(), "");
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_optimization_can_be_disabled_by_flag() {
+        let request = json!({
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "quota"}]
+        });
+        let body = to_json_bytes(&request);
+
+        let flags = OptimizationConfig {
+            enable_network_probe_mock: false,
+            ..OptimizationConfig::default()
+        };
+
+        let response = try_local_optimization(&body, &flags, "");
+        assert!(response.is_none());
+    }
+}

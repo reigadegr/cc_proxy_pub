@@ -1,9 +1,11 @@
 use super::{
     HttpClient, RequestStats,
+    optimization::try_local_optimization,
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
 use http_body_util::{BodyExt, Full};
+use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::prelude::*;
 use std::sync::Arc;
@@ -44,21 +46,6 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
     let cfg = config.get();
 
-    // 使用 round-robin 选择器获取 API key（负载均衡）
-    let api_key = if let Some(selector) = config.get_api_key_selector() {
-        let key = selector.next_key();
-        // 打印选择的 API key（脱敏显示前 8 位）
-        tracing::info!(
-            "🔑 选中的 API Key: {}***",
-            key.chars().take(8).collect::<String>()
-        );
-        key
-    } else {
-        tracing::error!("No API keys configured");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        return;
-    };
-
     // 记录请求头
     log_request_headers(
         req.method().as_str(),
@@ -90,6 +77,45 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         log_full_body(body_str);
         calculate_tokens(stats, body_str);
     }
+
+    if let Some(local_response) =
+        try_local_optimization(&body_bytes, &cfg.optimizations, cfg.model.as_str())
+    {
+        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
+
+        res.status_code(StatusCode::OK);
+        res.headers_mut().insert(
+            HeaderName::from_static("content-type"),
+            HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
+            res.headers_mut()
+                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
+        }
+
+        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
+            log_full_response(body_str);
+        }
+
+        res.body(local_response.body);
+        return;
+    }
+
+    // 使用 round-robin 选择器获取 API key（负载均衡）
+    let api_key = if let Some(selector) = config.get_api_key_selector() {
+        let key = selector.next_key();
+        // 打印选择的 API key（脱敏显示前 8 位）
+        tracing::info!(
+            "🔑 选中的 API Key: {}***",
+            key.chars().take(8).collect::<String>()
+        );
+        key
+    } else {
+        tracing::error!("No API keys configured");
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        return;
+    };
 
     // 解析 endpoint
     let endpoint = &cfg.endpoint;
