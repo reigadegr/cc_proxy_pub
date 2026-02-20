@@ -1,5 +1,5 @@
 use super::{
-    HttpClient, RequestStats,
+    HttpClient, RequestStats, openai_compat,
     optimization::try_local_optimization,
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
@@ -87,10 +87,10 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
 
     // 本地优化未命中，选择 upstream 和 api_key
-    let (upstream_idx, endpoint, selected_model, api_key) =
+    let (upstream_idx, endpoint, selected_model, api_key, oai_api) =
         if let Some(selector) = config.get_upstream_selector() {
-            if let Some((idx, endpoint, model, key)) = selector.next() {
-                (idx, endpoint, model, key)
+            if let Some((idx, endpoint, model, key, oai_api)) = selector.next() {
+                (idx, endpoint, model, key, oai_api)
             } else {
                 tracing::error!("No upstream configured");
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
@@ -104,16 +104,37 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
 
     // 打印选择的 upstream 和 api_key（脱敏显示）
     tracing::info!(
-        "🔄 选中的 Upstream[{}]: endpoint={}, model={}, api_key: {}***",
+        "🔄 选中的 Upstream[{}]: endpoint={}, model={}, api_key: {}***, oai_api={}",
         upstream_idx,
         endpoint,
         selected_model,
-        api_key.chars().take(8).collect::<String>()
+        api_key.chars().take(8).collect::<String>(),
+        oai_api
     );
 
     // 使用选中 upstream 的 model 覆盖请求体中的 model 字段
     let body_bytes = if !selected_model.is_empty() && !body_bytes.is_empty() {
         override_model_in_body(&body_bytes, &selected_model).unwrap_or(body_bytes)
+    } else {
+        body_bytes
+    };
+
+    // 如果 oai_api 启用，转换请求体格式：Claude → OpenAI Responses
+    let body_bytes = if oai_api && !body_bytes.is_empty() {
+        match openai_compat::anthropic_request_to_responses(&body_bytes) {
+            Ok(converted) => {
+                tracing::debug!(
+                    "🔄 请求体格式转换: Claude → OpenAI Responses ({} bytes → {} bytes)",
+                    body_bytes.len(),
+                    converted.len()
+                );
+                converted
+            }
+            Err(e) => {
+                tracing::warn!("请求体格式转换失败: {}，使用原始请求体", e);
+                body_bytes
+            }
+        }
     } else {
         body_bytes
     };
@@ -160,12 +181,17 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         "http"
     };
 
-    let upstream_url = format!("{host}{new_path}");
-    let mut upstream_url = upstream_url.replace("?beta=true", "");
+    let mut upstream_url = format!("{host}{new_path}");
+    upstream_url = upstream_url.replace("?beta=true", "");
+
+    // 只有当 oai_api=true 时才将 messages 替换为 responses
+    if oai_api {
+        upstream_url = upstream_url.replace("messages", "responses");
+    }
     while upstream_url.contains("//") {
         upstream_url = upstream_url.replace("//", "/");
     }
-    let upstream_url = format!("{scheme}://{upstream_url}");
+    upstream_url = format!("{scheme}://{upstream_url}");
     tracing::info!("Proxying to: {}", upstream_url);
 
     // 构建代理请求
@@ -185,8 +211,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     proxy_req_builder = proxy_req_builder.header("Authorization", format!("Bearer {api_key}"));
     proxy_req_builder = proxy_req_builder.header("host", host);
 
-    // 设置正确的 Content-Length（基于修改后的 body 大小）
-    proxy_req_builder = proxy_req_builder.header("content-length", body_bytes.len());
+    // Content-Length 由 hyper 自动设置，无需手动设置
 
     // 设置请求体
     let proxy_req = match proxy_req_builder.body(Full::new(body_bytes.clone())) {
@@ -214,6 +239,34 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     return;
                 }
             };
+
+            // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
+            let body_bytes = if oai_api && !body_bytes.is_empty() {
+                match openai_compat::responses_response_to_anthropic(
+                    &body_bytes,
+                    if selected_model.is_empty() {
+                        None
+                    } else {
+                        Some(&selected_model)
+                    },
+                ) {
+                    Ok(converted) => {
+                        tracing::debug!(
+                            "🔄 响应体格式转换: OpenAI Responses → Claude ({} bytes → {} bytes)",
+                            body_bytes.len(),
+                            converted.len()
+                        );
+                        converted
+                    }
+                    Err(e) => {
+                        tracing::warn!("响应体格式转换失败: {}，使用原始响应体", e);
+                        body_bytes
+                    }
+                }
+            } else {
+                body_bytes
+            };
+
             let body_str = String::from_utf8_lossy(&body_bytes);
 
             // 记录响应体
@@ -225,7 +278,11 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             );
             for (name, value) in parts.headers {
                 if let Some(name) = name {
-                    res.headers_mut().insert(name, value);
+                    // 跳过 content-length，让 Salvo/hyper 自动计算
+                    // 因为响应体可能经过格式转换，大小会改变
+                    if name.as_str() != "content-length" {
+                        res.headers_mut().insert(name, value);
+                    }
                 }
             }
             res.body(body_bytes.to_vec());

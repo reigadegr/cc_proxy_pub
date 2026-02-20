@@ -52,6 +52,11 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
             system_tokens += estimate_tokens(&system.to_string());
         }
 
+        // 统计 OpenAI 格式的 instructions 字段
+        if let Some(instructions) = json.get("instructions") {
+            system_tokens += estimate_tokens(&instructions.to_string());
+        }
+
         // 统计 tools
         if let Some(tools) = json.get("tools") {
             system_tokens += estimate_tokens(&tools.to_string());

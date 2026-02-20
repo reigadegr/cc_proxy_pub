@@ -43,8 +43,8 @@ impl UpstreamSelector {
     /// 请求6: upstream[1], key[2]
     /// 请求7: upstream[0], key[0]  (循环)
     ///
-    /// 返回 (upstream索引, endpoint, model, `api_key`)
-    pub fn next(&self) -> Option<(usize, String, String, String)> {
+    /// 返回 (upstream索引, endpoint, model, `api_key`, `oai_api`)
+    pub fn next(&self) -> Option<(usize, String, String, String, bool)> {
         if self.upstreams.is_empty() {
             return None;
         }
@@ -73,6 +73,7 @@ impl UpstreamSelector {
             upstream.endpoint.clone(),
             upstream.model.clone(),
             api_key,
+            upstream.oai_api,
         ))
     }
 }
@@ -88,6 +89,7 @@ mod tests {
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
+                oai_api: false,
             },
             UpstreamConfig {
                 endpoint: "https://upstream2.example.com".to_string(),
@@ -97,6 +99,7 @@ mod tests {
                     "key2b".to_string(),
                     "key2c".to_string(),
                 ],
+                oai_api: true,
             },
         ]
     }
@@ -111,37 +114,41 @@ mod tests {
         // 双层轮询：先每个upstream用key[0]，然后每个upstream用key[1]，依此类推
 
         // 请求1: upstream[0], key[0]
-        let (idx0, _ep0, _, key0) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx0, _ep0, _, key0, oai_api0) =
+            selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx0, 0);
         assert_eq!(key0, "key1a");
+        assert!(!oai_api0);
 
         // 请求2: upstream[1], key[0]
-        let (idx1, _ep1, _, key1) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx1, _ep1, _, key1, oai_api1) =
+            selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx1, 1);
         assert_eq!(key1, "key2a");
+        assert!(oai_api1);
 
         // 请求3: upstream[0], key[1]
-        let (idx2, _, _, key2) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx2, _, _, key2, _) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx2, 0);
         assert_eq!(key2, "key1b");
 
         // 请求4: upstream[1], key[1]
-        let (idx3, _, _, key3) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx3, _, _, key3, _) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx3, 1);
         assert_eq!(key3, "key2b");
 
         // 请求5: upstream[0], 回到key[0] (upstream[0]只有2个key)
-        let (idx4, _, _, key4) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx4, _, _, key4, _) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx4, 0);
         assert_eq!(key4, "key1a");
 
         // 请求6: upstream[1], key[2] (upstream[1]有3个key)
-        let (idx5, _, _, key5) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx5, _, _, key5, _) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx5, 1);
         assert_eq!(key5, "key2c");
 
         // 请求7: upstream[0], key[1]
-        let (idx6, _, _, key6) = selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx6, _, _, key6, _) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx6, 0);
         assert_eq!(key6, "key1b");
     }

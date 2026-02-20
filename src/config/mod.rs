@@ -29,6 +29,9 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
+    /// 启用 `OpenAI` 格式转换（Claude CLI ↔ `OpenAI` API）
+    #[serde(default)]
+    pub oai_api: bool,
 }
 
 /// 配置结构
@@ -79,6 +82,7 @@ impl Default for UpstreamConfig {
             endpoint: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
+            oai_api: false,
         }
     }
 }
