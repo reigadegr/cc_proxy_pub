@@ -249,7 +249,14 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             }
 
             // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
-            let body_bytes = if oai_api && !body_bytes.is_empty() {
+            // 跳过 SSE 流式响应（text/event-stream），仅转换 JSON 响应
+            let is_sse = parts
+                .headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ct| ct.contains("text/event-stream"));
+
+            let body_bytes = if oai_api && !body_bytes.is_empty() && !is_sse {
                 match openai_compat::responses_response_to_anthropic(
                     &body_bytes,
                     if selected_model.is_empty() {
@@ -272,6 +279,9 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     }
                 }
             } else {
+                if is_sse {
+                    tracing::debug!("SSE 流式响应，跳过 JSON 格式转换");
+                }
                 body_bytes
             };
 
