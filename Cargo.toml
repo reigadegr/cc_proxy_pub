@@ -37,6 +37,7 @@ hyper-rustls = { version = "0.27.7", features = [
 hyper-util = { version = "0.1.20", features = ["full"] }
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 notify = "8.2"
+rayon = "1.11.0"
 salvo = { version = "0.89.1", features = ["proxy", "affix-state"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

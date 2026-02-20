@@ -1,5 +1,6 @@
 use crate::gateway::RequestStats;
 use http::HeaderMap;
+use rayon::prelude::*;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 use tracing::{info, warn};
@@ -60,7 +61,7 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
         if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
             // 预处理所有消息，提取纯文本和角色
             let parsed_messages: Vec<(String, String, u64)> = messages
-                .iter()
+                .par_iter()
                 .filter_map(|msg| {
                     let role = msg.get("role")?.as_str()?.to_string();
                     let content = msg.get("content")?;
