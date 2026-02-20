@@ -4,7 +4,6 @@ export RUSTFLAGS="
     -Z mir-opt-level=2
     -Z dylib-lto=yes
     -Z inline-mir=yes
-    -Z fewer-names=yes
     -Z share-generics=yes
     -Z remap-cwd-prefix=.
     -Z function-sections=yes
