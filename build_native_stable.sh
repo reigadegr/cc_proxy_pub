@@ -2,9 +2,7 @@
 
 export RUSTFLAGS="
     -C default-linker-libraries
-    -C relro-level=none
-    -C code-model=small
-    -C relocation-model=pie
+    -C relro-level=full
     -C link-arg=-fuse-ld=mold
     -C symbol-mangling-version=v0
     -C llvm-args=-fp-contract=off
