@@ -61,28 +61,6 @@ impl Default for OptimizationConfig {
     }
 }
 
-// 向后兼容：如果只有一个 api_key 字段，自动转换为 api_keys 数组
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ConfigLegacy {
-    pub endpoint: String,
-    pub api_key: String,
-    #[serde(default = "default_model")]
-    pub model: String,
-    #[serde(default)]
-    pub optimizations: OptimizationConfig,
-}
-
-impl From<ConfigLegacy> for Config {
-    fn from(legacy: ConfigLegacy) -> Self {
-        Self {
-            endpoint: legacy.endpoint,
-            api_keys: vec![legacy.api_key],
-            model: legacy.model,
-            optimizations: legacy.optimizations,
-        }
-    }
-}
-
 const fn default_model() -> String {
     String::new()
 }
@@ -148,16 +126,8 @@ impl AtomicConfig {
         let content = fs::read_to_string(path.as_ref())
             .map_err(|e| format!("Failed to read config file: {e}"))?;
 
-        // 首先尝试加载新格式，如果失败则尝试旧格式
-        let config: Config = if let Ok(cfg) = toml::from_str(&content) {
-            cfg
-        } else {
-            // 尝试加载旧格式并转换
-            let legacy: ConfigLegacy =
-                toml::from_str(&content).map_err(|e| format!("Failed to parse TOML: {e}"))?;
-            warn!("⚠️  检测到旧配置格式（api_key），已自动转换为新格式（api_keys）");
-            Config::from(legacy)
-        };
+        let config: Config =
+            toml::from_str(&content).map_err(|e| format!("Failed to parse TOML: {e}"))?;
 
         Ok(config)
     }
