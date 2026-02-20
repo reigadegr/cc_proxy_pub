@@ -22,7 +22,7 @@ cast_precision_loss = "allow"
 struct_excessive_bools = "allow"
 
 [dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 arc-swap = "1.8.2"
 bytes = "1.11.1"
 chrono = "0.4.43"
