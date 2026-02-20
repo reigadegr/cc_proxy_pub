@@ -10,15 +10,13 @@ pub use response_builder::OptimizationResponse;
 pub fn try_local_optimization(
     body_bytes: &[u8],
     flags: &OptimizationConfig,
-    fallback_model: &str,
 ) -> Option<OptimizationResponse> {
     let request: Value = serde_json::from_slice(body_bytes).ok()?;
-    let model = resolve_model(&request, fallback_model);
 
     if flags.enable_network_probe_mock && detection::is_quota_check_request(&request) {
         tracing::info!("Optimization: Intercepted and mocked quota probe");
         return response_builder::build_text_response(
-            model.as_str(),
+            "unknown-model",
             "Quota check passed.",
             10,
             5,
@@ -32,7 +30,7 @@ pub fn try_local_optimization(
         tracing::info!("Optimization: Handled fast prefix detection");
         let prefix = command_utils::extract_command_prefix(command.as_str());
         return response_builder::build_text_response(
-            model.as_str(),
+            "unknown-model",
             prefix.as_str(),
             100,
             5,
@@ -43,7 +41,7 @@ pub fn try_local_optimization(
     if flags.enable_title_generation_skip && detection::is_title_generation_request(&request) {
         tracing::info!("Optimization: Skipped title generation request");
         return response_builder::build_text_response(
-            model.as_str(),
+            "unknown-model",
             "Conversation",
             100,
             5,
@@ -54,7 +52,7 @@ pub fn try_local_optimization(
     if flags.enable_suggestion_mode_skip && detection::is_suggestion_mode_request(&request) {
         tracing::info!("Optimization: Skipped suggestion mode request");
         return response_builder::build_text_response(
-            model.as_str(),
+            "unknown-model",
             "",
             100,
             1,
@@ -70,7 +68,7 @@ pub fn try_local_optimization(
             command_utils::extract_filepaths_from_command(command.as_str(), output.as_str());
 
         return response_builder::build_text_response(
-            model.as_str(),
+            "unknown-model",
             filepaths.as_str(),
             100,
             10,
@@ -79,16 +77,6 @@ pub fn try_local_optimization(
     }
 
     None
-}
-
-fn resolve_model(request: &Value, fallback_model: &str) -> String {
-    request
-        .get("model")
-        .and_then(Value::as_str)
-        .filter(|model| !model.is_empty())
-        .or_else(|| (!fallback_model.is_empty()).then_some(fallback_model))
-        .unwrap_or("unknown-model")
-        .to_owned()
 }
 
 #[cfg(test)]
@@ -133,7 +121,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            try_local_optimization(&body, &OptimizationConfig::default()),
             "quota probe should hit",
         );
 
@@ -156,7 +144,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            try_local_optimization(&body, &OptimizationConfig::default()),
             "prefix optimization should hit",
         );
 
@@ -178,7 +166,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            try_local_optimization(&body, &OptimizationConfig::default()),
             "title optimization should hit",
         );
 
@@ -197,7 +185,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            try_local_optimization(&body, &OptimizationConfig::default()),
             "suggestion optimization should hit",
         );
 
@@ -216,7 +204,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default(), ""),
+            try_local_optimization(&body, &OptimizationConfig::default()),
             "filepath optimization should hit",
         );
 
@@ -234,7 +222,7 @@ mod tests {
         });
         let body = to_json_bytes(&request);
 
-        let response = try_local_optimization(&body, &OptimizationConfig::default(), "");
+        let response = try_local_optimization(&body, &OptimizationConfig::default());
         assert!(response.is_none());
     }
 
@@ -251,7 +239,7 @@ mod tests {
             ..OptimizationConfig::default()
         };
 
-        let response = try_local_optimization(&body, &flags, "");
+        let response = try_local_optimization(&body, &flags);
         assert!(response.is_none());
     }
 }

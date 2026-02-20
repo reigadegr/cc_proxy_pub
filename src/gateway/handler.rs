@@ -63,8 +63,30 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         }
     };
 
-    // 使用双层轮询选择器：先选 upstream，再选该 upstream 的 api_key
-    // 注意：必须先选择 upstream，再用对应的 model 覆盖请求体
+    // 优先检查本地优化（不需要选择 upstream/key）
+    if let Some(local_response) = try_local_optimization(&body_bytes, &cfg.optimizations) {
+        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
+
+        res.status_code(StatusCode::OK);
+        res.headers_mut().insert(
+            HeaderName::from_static("content-type"),
+            HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
+            res.headers_mut()
+                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
+        }
+
+        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
+            log_full_response(body_str);
+        }
+
+        res.body(local_response.body);
+        return;
+    }
+
+    // 本地优化未命中，选择 upstream 和 api_key
     let (upstream_idx, endpoint, selected_model, api_key) =
         if let Some(selector) = config.get_upstream_selector() {
             if let Some((idx, endpoint, model, key)) = selector.next() {
@@ -95,31 +117,6 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     } else {
         body_bytes
     };
-
-    // 检查本地优化（使用选中 upstream 的 model 作为 fallback）
-    if let Some(local_response) =
-        try_local_optimization(&body_bytes, &cfg.optimizations, &selected_model)
-    {
-        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
-
-        res.status_code(StatusCode::OK);
-        res.headers_mut().insert(
-            HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/json"),
-        );
-
-        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
-            res.headers_mut()
-                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
-        }
-
-        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
-            log_full_response(body_str);
-        }
-
-        res.body(local_response.body);
-        return;
-    }
 
     // 记录请求体并计算 token
     if !body_bytes.is_empty()
