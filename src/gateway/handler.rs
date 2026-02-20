@@ -4,9 +4,11 @@ use super::{
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
-use http_body_util::{BodyExt, Full};
+use futures_util::StreamExt as _;
+use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
+use salvo::http::ResBody;
 use salvo::prelude::*;
 use std::sync::Arc;
 
@@ -54,7 +56,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     );
 
     // 收集请求体
-    let body_bytes = match req.body_mut().collect().await {
+    let body_bytes = match BodyExt::collect(req.body_mut()).await {
         Ok(body) => body.to_bytes(),
         Err(e) => {
             tracing::error!("Failed to collect request body: {}", e);
@@ -230,8 +232,43 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             let (parts, body) = proxy_resp.into_parts();
             let status_code = parts.status.as_u16();
 
-            // 收集响应体
-            let body_bytes = match body.collect().await {
+            // 在 collect() 之前判断是否为 SSE，避免将整个流缓冲到内存
+            let is_sse = parts
+                .headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ct| ct.contains("text/event-stream"));
+
+            if is_sse {
+                // SSE：立即设置状态码和响应头，直接透传字节流，零缓冲
+                tracing::debug!("SSE 流式响应，直接透传");
+                res.status_code(
+                    StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                );
+                for (name, value) in parts.headers {
+                    if let Some(name) = name
+                        && name.as_str() != "content-length"
+                    {
+                        res.headers_mut().insert(name, value);
+                    }
+                }
+                let stream = BodyStream::new(body)
+                    .filter_map(|frame| async move {
+                        match frame {
+                            Ok(f) => f.into_data().ok(),
+                            Err(e) => {
+                                tracing::error!("SSE 流读取错误: {}", e);
+                                None
+                            }
+                        }
+                    })
+                    .map(Ok::<bytes::Bytes, std::convert::Infallible>);
+                res.body(ResBody::stream(stream));
+                return;
+            }
+
+            // 非 SSE：收集完整响应体后处理
+            let body_bytes = match BodyExt::collect(body).await {
                 Ok(b) => b.to_bytes(),
                 Err(e) => {
                     tracing::error!("Failed to collect response body: {}", e);
@@ -249,14 +286,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             }
 
             // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
-            // 跳过 SSE 流式响应（text/event-stream），仅转换 JSON 响应
-            let is_sse = parts
-                .headers
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .is_some_and(|ct| ct.contains("text/event-stream"));
-
-            let body_bytes = if oai_api && !body_bytes.is_empty() && !is_sse {
+            let body_bytes = if oai_api && !body_bytes.is_empty() {
                 match openai_compat::responses_response_to_anthropic(
                     &body_bytes,
                     if selected_model.is_empty() {
@@ -279,9 +309,6 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     }
                 }
             } else {
-                if is_sse {
-                    tracing::debug!("SSE 流式响应，跳过 JSON 格式转换");
-                }
                 body_bytes
             };
 
