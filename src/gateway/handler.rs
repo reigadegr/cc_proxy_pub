@@ -64,14 +64,16 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     };
 
     // 修改请求体中的 model 字段（如果配置中有设置）
-    let body_bytes = if !cfg.upstream.model.is_empty() && !body_bytes.is_empty() {
-        override_model_in_body(&body_bytes, &cfg.upstream.model).unwrap_or(body_bytes)
+    // 这里使用第一个 upstream 的 model 作为默认
+    let default_model = cfg.upstream.first().map_or("", |u| u.model.as_str());
+    let body_bytes = if !default_model.is_empty() && !body_bytes.is_empty() {
+        override_model_in_body(&body_bytes, default_model).unwrap_or(body_bytes)
     } else {
         body_bytes
     };
 
     if let Some(local_response) =
-        try_local_optimization(&body_bytes, &cfg.optimizations, cfg.upstream.model.as_str())
+        try_local_optimization(&body_bytes, &cfg.optimizations, default_model)
     {
         tracing::info!("✅ 本地优化命中: {}", local_response.reason);
 
@@ -102,27 +104,35 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         calculate_tokens(stats, body_str);
     }
 
-    // 使用 round-robin 选择器获取 API key（负载均衡）
-    let api_key = if let Some(selector) = config.get_api_key_selector() {
-        let key = selector.next_key();
-        // 打印选择的 API key（脱敏显示前 8 位）
-        tracing::info!(
-            "🔑 选中的 API Key: {}***",
-            key.chars().take(8).collect::<String>()
-        );
-        key
-    } else {
-        tracing::error!("No API keys configured");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        return;
-    };
+    // 使用双层轮询选择器：先选 upstream，再选该 upstream 的 api_key
+    let (upstream_idx, endpoint, _model, api_key) =
+        if let Some(selector) = config.get_upstream_selector() {
+            if let Some((idx, endpoint, model, key)) = selector.next() {
+                (idx, endpoint, model, key)
+            } else {
+                tracing::error!("No upstream configured");
+                res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+                return;
+            }
+        } else {
+            tracing::error!("UpstreamSelector not initialized");
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            return;
+        };
+
+    // 打印选择的 upstream 和 api_key（脱敏显示）
+    tracing::info!(
+        "🔄 选中的 Upstream[{}]: endpoint={}, api_key: {}***",
+        upstream_idx,
+        endpoint,
+        api_key.chars().take(8).collect::<String>()
+    );
 
     // 解析 endpoint
-    let endpoint = &cfg.upstream.endpoint;
     let host_str = endpoint
         .strip_prefix("https://")
         .or_else(|| endpoint.strip_prefix("http://"))
-        .unwrap_or(endpoint);
+        .unwrap_or(&endpoint);
 
     let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
 

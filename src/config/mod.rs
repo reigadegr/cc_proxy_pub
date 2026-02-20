@@ -1,6 +1,6 @@
 pub mod format;
 
-use crate::api_key_selector::ApiKeySelector;
+use crate::upstream_selector::UpstreamSelector;
 use arc_swap::{ArcSwap, Guard};
 use format::format_toml;
 use notify::event::{AccessKind, AccessMode};
@@ -14,8 +14,8 @@ use tracing::{error, info, warn};
 pub struct AtomicConfig {
     inner: ArcSwap<Config>,
     config_path: PathBuf,
-    /// API Key 选择器（使用 round-robin 策略实现负载均衡）
-    api_key_selector: ArcSwap<Option<Arc<ApiKeySelector>>>,
+    /// Upstream `选择器（双层轮询：先upstream，后api_keys`）
+    upstream_selector: ArcSwap<Option<Arc<UpstreamSelector>>>,
 }
 
 /// 上游提供商配置
@@ -34,9 +34,9 @@ pub struct UpstreamConfig {
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// 上游提供商配置
+    /// 上游提供商配置列表（支持多个上游负载均衡）
     #[serde(default)]
-    pub upstream: UpstreamConfig,
+    pub upstream: Vec<UpstreamConfig>,
     /// 本地优化拦截开关
     #[serde(default)]
     pub optimizations: OptimizationConfig,
@@ -110,12 +110,23 @@ impl AtomicConfig {
         });
 
         info!("✅ 配置已加载:");
-        info!("api_keys: {} 个", config.upstream.api_keys.len());
-        for (i, key) in config.upstream.api_keys.iter().enumerate() {
-            info!("  [{}] {}***", i, key.chars().take(8).collect::<String>());
+        info!("upstream 数量: {} 个", config.upstream.len());
+        for (i, up) in config.upstream.iter().enumerate() {
+            info!(
+                "  [{}] endpoint={}, model={}, api_keys={} 个",
+                i,
+                up.endpoint,
+                up.model,
+                up.api_keys.len()
+            );
+            for (j, key) in up.api_keys.iter().enumerate() {
+                info!(
+                    "      api_key[{}]: {}***",
+                    j,
+                    key.chars().take(8).collect::<String>()
+                );
+            }
         }
-        info!("endpoint = {}", config.upstream.endpoint);
-        info!("model = {}", config.upstream.model);
         info!(
             "optimizations: quota={}, prefix={}, title={}, suggestion={}, filepath={}",
             config.optimizations.enable_network_probe_mock,
@@ -125,19 +136,13 @@ impl AtomicConfig {
             config.optimizations.enable_filepath_extraction_mock,
         );
 
-        // 创建 API Key 选择器
-        let api_key_selector = if config.upstream.api_keys.is_empty() {
-            None
-        } else {
-            Some(Arc::new(ApiKeySelector::new(
-                config.upstream.api_keys.clone(),
-            )))
-        };
+        // 创建 Upstream 选择器（双层轮询）
+        let upstream_selector = UpstreamSelector::new(config.upstream.clone()).map(Arc::new);
 
         Self {
             inner: ArcSwap::from(Arc::new(config)),
             config_path,
-            api_key_selector: ArcSwap::from(Arc::new(api_key_selector)),
+            upstream_selector: ArcSwap::from(Arc::new(upstream_selector)),
         }
     }
 
@@ -157,9 +162,9 @@ impl AtomicConfig {
         self.inner.load()
     }
 
-    /// 获取 API Key 选择器
-    pub fn get_api_key_selector(&self) -> Option<Arc<ApiKeySelector>> {
-        (**self.api_key_selector.load()).clone()
+    /// 获取 Upstream 选择器（双层轮询）
+    pub fn get_upstream_selector(&self) -> Option<Arc<UpstreamSelector>> {
+        (**self.upstream_selector.load()).clone()
     }
 
     /// 重新加载配置
@@ -174,47 +179,37 @@ impl AtomicConfig {
                 let old = self.inner.load();
 
                 // 检测配置是否真的发生了变化
-                let api_keys_changed = old.upstream.api_keys != new_config.upstream.api_keys;
-                let endpoint_changed = old.upstream.endpoint != new_config.upstream.endpoint;
-                let model_changed = old.upstream.model != new_config.upstream.model;
+                let upstream_changed = old.upstream != new_config.upstream;
                 let optimizations_changed = old.optimizations != new_config.optimizations;
 
                 self.inner.store(Arc::new(new_config.clone()));
 
-                // 更新 API Key 选择器（如果 api_keys 发生了变化）
-                if api_keys_changed {
-                    let new_selector = if new_config.upstream.api_keys.is_empty() {
-                        None
-                    } else {
-                        Some(Arc::new(ApiKeySelector::new(
-                            new_config.upstream.api_keys.clone(),
-                        )))
-                    };
-                    self.api_key_selector.store(Arc::new(new_selector));
+                // 更新 Upstream 选择器
+                if upstream_changed {
+                    let new_selector =
+                        UpstreamSelector::new(new_config.upstream.clone()).map(Arc::new);
+                    self.upstream_selector.store(Arc::new(new_selector));
                 }
 
-                if api_keys_changed || endpoint_changed || model_changed || optimizations_changed {
+                if upstream_changed || optimizations_changed {
                     info!("✅ 配置已更新:");
-                    if api_keys_changed {
+                    if upstream_changed {
                         info!(
-                            "api_keys: {} 个 -> {} 个",
-                            old.upstream.api_keys.len(),
-                            new_config.upstream.api_keys.len()
+                            "upstream: {} 个 -> {} 个",
+                            old.upstream.len(),
+                            new_config.upstream.len()
                         );
+                        for (i, up) in new_config.upstream.iter().enumerate() {
+                            info!(
+                                "  [{}] endpoint={}, model={}, api_keys={} 个",
+                                i,
+                                up.endpoint,
+                                up.model,
+                                up.api_keys.len()
+                            );
+                        }
                     }
 
-                    if endpoint_changed {
-                        info!(
-                            "endpoint: {} → {}",
-                            old.upstream.endpoint, new_config.upstream.endpoint
-                        );
-                    }
-                    if model_changed {
-                        info!(
-                            "model: {} → {}",
-                            old.upstream.model, new_config.upstream.model
-                        );
-                    }
                     if optimizations_changed {
                         info!(
                             "optimizations: quota {}→{}, prefix {}→{}, title {}→{}, suggestion {}→{}, filepath {}→{}",
@@ -234,11 +229,7 @@ impl AtomicConfig {
                     info!("ℹ️ 配置文件内容未变化");
                 }
 
-                info!(
-                    "📋 当前配置: api_keys={} 个, endpoint={}",
-                    new_config.upstream.api_keys.len(),
-                    new_config.upstream.endpoint
-                );
+                info!("📋 当前配置: upstream={} 个", new_config.upstream.len());
             }
             Err(e) => {
                 error!("❌ 配置重载失败: {}", e);

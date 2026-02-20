@@ -1,6 +1,6 @@
-mod api_key_selector;
 mod config;
 mod gateway;
+mod upstream_selector;
 
 use chrono::Local;
 use config::AtomicConfig;
@@ -43,11 +43,15 @@ async fn main() -> anyhow::Result<()> {
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
     let cfg = atomic_config.get();
-    info!(
-        "Initial config: {} api_key(s), endpoint={}",
-        cfg.upstream.api_keys.len(),
-        cfg.upstream.endpoint
-    );
+    info!("Initial config: {} upstream(s)", cfg.upstream.len());
+    for (i, up) in cfg.upstream.iter().enumerate() {
+        info!(
+            "  [{}] endpoint={}, api_keys={}",
+            i,
+            up.endpoint,
+            up.api_keys.len()
+        );
+    }
 
     // 启动配置文件监听线程
     Arc::clone(&atomic_config).start_watcher();
