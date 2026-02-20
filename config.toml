@@ -1,5 +1,6 @@
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 api_keys = ["your_api_key1", "your_api_key2"]
+model = "glm-4.7"
 
 [optimizations]
 enable_network_probe_mock = true

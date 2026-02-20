@@ -70,14 +70,6 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
         body_bytes
     };
 
-    // 记录请求体并计算 token
-    if !body_bytes.is_empty()
-        && let Ok(body_str) = std::str::from_utf8(&body_bytes)
-    {
-        log_full_body(body_str);
-        calculate_tokens(stats, body_str);
-    }
-
     if let Some(local_response) =
         try_local_optimization(&body_bytes, &cfg.optimizations, cfg.model.as_str())
     {
@@ -100,6 +92,14 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
 
         res.body(local_response.body);
         return;
+    }
+
+    // 记录请求体并计算 token
+    if !body_bytes.is_empty()
+        && let Ok(body_str) = std::str::from_utf8(&body_bytes)
+    {
+        log_full_body(body_str);
+        calculate_tokens(stats, body_str);
     }
 
     // 使用 round-robin 选择器获取 API key（负载均衡）

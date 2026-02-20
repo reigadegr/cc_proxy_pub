@@ -19,6 +19,7 @@ missing_errors_doc = "allow"
 missing_safety_doc = "allow"
 missing_panics_doc = "allow"
 cast_precision_loss = "allow"
+struct_excessive_bools = "allow"
 
 [dependencies]
 anyhow = "1.0.101"
