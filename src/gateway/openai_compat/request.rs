@@ -195,13 +195,20 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                     .get("is_error")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+
                 let mut item = Map::new();
                 item.insert("type".to_string(), json!("function_call_output"));
                 item.insert("call_id".to_string(), Value::String(call_id.to_string()));
-                item.insert("output".to_string(), Value::String(output_text));
-                if is_error {
-                    item.insert("is_error".to_string(), Value::Bool(true));
-                }
+
+                // 注意：上游 OpenAI Responses API 不支持 is_error 字段
+                // 如果有错误，将错误信息包装在 output 文本中
+                let final_output = if is_error && !output_text.is_empty() {
+                    format!("[ERROR] {output_text}")
+                } else {
+                    output_text
+                };
+                item.insert("output".to_string(), Value::String(final_output));
+
                 if !matches!(output_raw, Value::String(_)) {
                     item.insert("output_parts".to_string(), output_raw);
                 }

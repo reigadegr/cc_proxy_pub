@@ -18,8 +18,13 @@ pub fn responses_response_to_anthropic(
     body: &Bytes,
     model_hint: Option<&str>,
 ) -> Result<Bytes, String> {
-    let value: Value =
-        serde_json::from_slice(body).map_err(|_| "Upstream response must be JSON.".to_string())?;
+    let raw_body_str = String::from_utf8_lossy(body);
+    tracing::debug!("🔍 原始上游响应 JSON: {}", raw_body_str);
+
+    let value: Value = serde_json::from_slice(body).map_err(|e| {
+        tracing::error!("❌ JSON 解析失败: {}", e);
+        "Upstream response must be JSON.".to_string()
+    })?;
     let Some(object) = value.as_object() else {
         return Err("Upstream response must be a JSON object.".to_string());
     };
@@ -28,6 +33,7 @@ pub fn responses_response_to_anthropic(
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or("msg_proxy");
+    tracing::debug!("📋 响应 id: {}", id);
     let model = object
         .get("model")
         .and_then(Value::as_str)
@@ -43,15 +49,19 @@ pub fn responses_response_to_anthropic(
         .get("output")
         .and_then(Value::as_array)
         .map_or(&[], |items| items.as_slice());
+    tracing::debug!("📤 output 数组长度: {}", output.len());
     let mut combined_text = String::new();
     let mut thinking_text = String::new();
     let mut tool_uses = Vec::new();
 
     for item in output {
         let Some(item) = item.as_object() else {
+            tracing::debug!("⚠️ output 项不是对象");
             continue;
         };
-        match item.get("type").and_then(Value::as_str) {
+        let item_type = item.get("type").and_then(Value::as_str);
+        tracing::debug!("📤 output 项类型: {:?}", item_type);
+        match item_type {
             Some("message") => {
                 if item.get("role").and_then(Value::as_str) != Some("assistant") {
                     continue;
@@ -123,7 +133,7 @@ pub fn responses_response_to_anthropic(
 fn responses_function_call_to_tool_use(item: &Map<String, Value>) -> Option<Value> {
     let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("");
     let item_id = item.get("id").and_then(Value::as_str).unwrap_or("");
-    let id = if !call_id.is_empty() { call_id } else { item_id };
+    let id = if call_id.is_empty() { item_id } else { call_id };
     if id.is_empty() {
         return None;
     }

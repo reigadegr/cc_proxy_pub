@@ -240,6 +240,14 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                 }
             };
 
+            // 记录原始上游响应（用于调试）
+            if oai_api && !body_bytes.is_empty() {
+                let raw_body_str = String::from_utf8_lossy(&body_bytes);
+                tracing::info!("=== 原始上游响应 (转换前) ===");
+                tracing::info!("{}", raw_body_str);
+                tracing::info!("=== 原始上游响应结束 ===");
+            }
+
             // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
             let body_bytes = if oai_api && !body_bytes.is_empty() {
                 match openai_compat::responses_response_to_anthropic(
