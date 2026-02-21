@@ -4,7 +4,7 @@ use super::{
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
-use futures_util::StreamExt as _;
+use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
@@ -240,8 +240,8 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                 .is_some_and(|ct| ct.contains("text/event-stream"));
 
             if is_sse {
-                // SSE：立即设置状态码和响应头，直接透传字节流，零缓冲
-                tracing::debug!("SSE 流式响应，直接透传");
+                // SSE：流式透传 + 实时日志
+                tracing::info!("=== SSE 流式响应开始 ===");
                 res.status_code(
                     StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                 );
@@ -253,6 +253,15 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     }
                 }
                 let stream = BodyStream::new(body)
+                    .inspect(|frame| {
+                        if let Ok(f) = frame {
+                            if let Some(data) = f.data_ref() {
+                                if let Ok(s) = std::str::from_utf8(data) {
+                                    tracing::info!("{}", s);
+                                }
+                            }
+                        }
+                    })
                     .filter_map(|frame| async move {
                         match frame {
                             Ok(f) => f.into_data().ok(),
