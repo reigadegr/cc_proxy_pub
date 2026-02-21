@@ -12,6 +12,42 @@ use salvo::http::ResBody;
 use salvo::prelude::*;
 use std::sync::Arc;
 
+/// 需要从 system 数组中移除的文本特征
+const SYSTEM_PROMPT_FILTER_MARKER: &str =
+    "You are an interactive CLI tool that helps users with soft";
+
+/// 过滤请求体中的 system 数组，移除包含特定文本的元素
+///
+/// Claude CLI 发送的请求中，system 数组包含很长的提示词文本，
+/// 这些文本会占用大量 tokens。此函数移除包含指定标记文本的元素。
+fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
+
+    // 获取 system 数组
+    let system = json.get_mut("system")?.as_array_mut()?;
+
+    let original_len = system.len();
+
+    // 过滤掉包含标记文本的元素
+    system.retain(|item| {
+        item.get("text")
+            .and_then(|t| t.as_str())
+            .is_none_or(|text| !text.contains(SYSTEM_PROMPT_FILTER_MARKER))
+    });
+
+    // 如果有元素被移除，记录日志
+    if system.len() < original_len {
+        tracing::info!(
+            "🧹 已过滤 system 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
+            original_len,
+            system.len(),
+            original_len - system.len()
+        );
+    }
+
+    serde_json::to_vec(&json).ok().map(Into::into)
+}
+
 /// 尝试覆盖请求体中的 model 字段
 fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes> {
     let json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
@@ -56,7 +92,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     );
 
     // 收集请求体
-    let body_bytes = match BodyExt::collect(req.body_mut()).await {
+    let mut body_bytes = match BodyExt::collect(req.body_mut()).await {
         Ok(body) => body.to_bytes(),
         Err(e) => {
             tracing::error!("Failed to collect request body: {}", e);
@@ -64,6 +100,13 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             return;
         }
     };
+
+    // 过滤 system 数组中占用大量 tokens 的提示词
+    if !body_bytes.is_empty()
+        && let Some(filtered) = filter_system_prompts(&body_bytes)
+    {
+        body_bytes = filtered;
+    }
 
     // 优先检查本地优化（不需要选择 upstream/key）
     if let Some(local_response) = try_local_optimization(&body_bytes, &cfg.optimizations) {

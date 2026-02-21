@@ -3,3 +3,5 @@
 *lock*
 .idea
 *patch
+**/*.json
+**/*.txt
