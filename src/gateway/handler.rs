@@ -4,12 +4,15 @@ use super::{
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
+use bytes::Bytes;
+use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::http::ResBody;
 use salvo::prelude::*;
+use std::io::Read;
 use std::sync::Arc;
 
 /// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
@@ -38,6 +41,37 @@ fn should_remove_content(text: &str) -> bool {
         }
     }
     false
+}
+
+/// 尝试解压 gzip 编码的响应体
+///
+/// 检查 content-encoding 头部，如果是 gzip 则自动解压。
+/// 返回解压后的字节和是否进行了解压的标志。
+fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>) -> Bytes {
+    // 检查是否为 gzip 编码
+    let is_gzip = content_encoding.is_some_and(|enc| enc.to_lowercase().contains("gzip"));
+
+    if !is_gzip {
+        return body_bytes.clone();
+    }
+
+    // 尝试解压 gzip 数据
+    let mut decoder = GzDecoder::new(&body_bytes[..]);
+    let mut decompressed = Vec::new();
+    match decoder.read_to_end(&mut decompressed) {
+        Ok(_) => {
+            tracing::debug!(
+                "📦 gzip 解压成功: {} bytes → {} bytes",
+                body_bytes.len(),
+                decompressed.len()
+            );
+            decompressed.into()
+        }
+        Err(e) => {
+            tracing::warn!("gzip 解压失败: {}，使用原始响应体", e);
+            body_bytes.clone()
+        }
+    }
 }
 
 /// 过滤请求体中的 system 数组，移除包含特定文本的元素
@@ -101,10 +135,11 @@ fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
         // 统计移除前的信息
         for item in content.iter() {
             if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                && should_remove_content(text) {
-                    total_removed += 1;
-                    total_chars += text.len();
-                }
+                && should_remove_content(text)
+            {
+                total_removed += 1;
+                total_chars += text.len();
+            }
         }
 
         // 过滤掉需要移除的内容
@@ -383,13 +418,11 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                 }
                 let stream = BodyStream::new(body)
                     .inspect(|frame| {
-                        if let Ok(f) = frame {
-                            if let Some(data) = f.data_ref() {
-                                if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(f) = frame
+                            && let Some(data) = f.data_ref()
+                                && let Ok(s) = std::str::from_utf8(data) {
                                     tracing::info!("{}", s);
                                 }
-                            }
-                        }
                     })
                     .filter_map(|frame| async move {
                         match frame {
@@ -414,6 +447,13 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     return;
                 }
             };
+
+            // 检查并解压 gzip 编码的响应体
+            let content_encoding = parts
+                .headers
+                .get("content-encoding")
+                .and_then(|v| v.to_str().ok());
+            let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
 
             // 记录原始上游响应（用于调试）
             if oai_api && !body_bytes.is_empty() {
@@ -461,9 +501,11 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             );
             for (name, value) in parts.headers {
                 if let Some(name) = name {
+                    let name_str = name.as_str();
                     // 跳过 content-length，让 Salvo/hyper 自动计算
                     // 因为响应体可能经过格式转换，大小会改变
-                    if name.as_str() != "content-length" {
+                    // 跳过 content-encoding，因为我们已经解压了响应体
+                    if name_str != "content-length" && name_str != "content-encoding" {
                         res.headers_mut().insert(name, value);
                     }
                 }
