@@ -314,7 +314,13 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     let (upstream_idx, endpoint, selected_model, api_key, oai_api) =
         if let Some(selector) = config.get_upstream_selector() {
             if let Some((idx, endpoint, model, key, oai_api)) = selector.next() {
-                (idx, endpoint, model, key, oai_api)
+                (
+                    idx,
+                    endpoint.to_owned(),
+                    model.to_owned(),
+                    key.to_owned(),
+                    oai_api,
+                )
             } else {
                 tracing::error!("No upstream configured");
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);

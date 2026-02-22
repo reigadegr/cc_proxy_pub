@@ -44,7 +44,7 @@ impl UpstreamSelector {
     /// 请求7: upstream[0], key[0]  (循环)
     ///
     /// 返回 (upstream索引, endpoint, model, `api_key`, `oai_api`)
-    pub fn next(&self) -> Option<(usize, String, String, String, bool)> {
+    pub fn next(&self) -> Option<(usize, &str, &str, &str, bool)> {
         if self.upstreams.is_empty() {
             return None;
         }
@@ -58,20 +58,20 @@ impl UpstreamSelector {
         let upstream_idx = global_idx % upstream_count;
         let upstream = &self.upstreams[upstream_idx];
 
-        // 在该 upstream 的 api_keys 中轮询
+        // 在该 upstream 的 api_keys 中轮询（返回借用，避免克隆）
         let api_key = if upstream.api_keys.is_empty() {
-            String::new()
+            ""
         } else {
             let key_count = upstream.api_keys.len();
             // 每个 upstream 使用不同的相位偏移，实现交错轮询
             let key_idx = (global_idx / upstream_count) % key_count;
-            upstream.api_keys[key_idx].clone()
+            &upstream.api_keys[key_idx]
         };
 
         Some((
             upstream_idx,
-            upstream.endpoint.clone(),
-            upstream.model.clone(),
+            &upstream.endpoint,
+            &upstream.model,
             api_key,
             upstream.oai_api,
         ))
