@@ -62,6 +62,48 @@ fn extract_thinking_text(message: &serde_json::Value) -> Option<&str> {
         .filter(|text| !text.is_empty())
 }
 
+/// 判断 `reasoning_content` 是否缺失或仍为占位符
+fn reasoning_missing_or_placeholder(message: &serde_json::Value) -> bool {
+    message
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .is_none_or(|value| value == REASONING_PLACEHOLDER)
+}
+
+/// 根据 thinking 文本补丁单条消息的 `reasoning_content`
+fn patch_message_reasoning_content(
+    message: &mut serde_json::Value,
+    fallback_thinking: Option<&str>,
+) -> bool {
+    if !reasoning_missing_or_placeholder(message) {
+        return false;
+    }
+
+    let reasoning_value = extract_thinking_text(message)
+        .or(fallback_thinking)
+        .unwrap_or(REASONING_PLACEHOLDER)
+        .to_string();
+
+    let Some(object) = message.as_object_mut() else {
+        return false;
+    };
+
+    let should_update = object
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .is_none_or(|current| current != reasoning_value);
+
+    if should_update {
+        object.insert(
+            "reasoning_content".to_string(),
+            serde_json::json!(reasoning_value),
+        );
+        return true;
+    }
+
+    false
+}
+
 /// 尝试解压 gzip 编码的响应体
 ///
 /// 检查 content-encoding 头部，如果是 gzip 则自动解压。
@@ -151,6 +193,7 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
 
     let messages = json.get_mut("messages")?.as_array_mut()?;
     let mut patched = false;
+    let last_idx = messages.len().saturating_sub(1);
 
     // 用于兜底：取最后一个可用的 thinking 文本
     let latest_thinking = messages
@@ -159,69 +202,16 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
         .find_map(extract_thinking_text)
         .map(str::to_string);
 
-    for message in messages.iter_mut() {
-        if message.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+    for (idx, message) in messages.iter_mut().enumerate() {
+        let is_assistant = message.get("role").and_then(|r| r.as_str()) == Some("assistant");
+        let is_last = idx == last_idx;
+
+        if !is_assistant && !is_last {
             continue;
         }
 
-        let should_patch = message
-            .get("reasoning_content")
-            .and_then(|v| v.as_str())
-            .is_none_or(|value| value == REASONING_PLACEHOLDER);
-
-        if !should_patch {
-            continue;
-        }
-
-        let reasoning_value = extract_thinking_text(message)
-            .or(latest_thinking.as_deref())
-            .unwrap_or(REASONING_PLACEHOLDER)
-            .to_string();
-
-        let Some(object) = message.as_object_mut() else {
-            continue;
-        };
-
-        let should_update = object
-            .get("reasoning_content")
-            .and_then(|v| v.as_str())
-            .is_none_or(|current| current != reasoning_value);
-
-        if should_update {
-            object.insert(
-                "reasoning_content".to_string(),
-                serde_json::json!(reasoning_value),
-            );
+        if patch_message_reasoning_content(message, latest_thinking.as_deref()) {
             patched = true;
-        }
-    }
-
-    if let Some(last_message) = messages.last_mut() {
-        let should_patch = last_message
-            .get("reasoning_content")
-            .and_then(|v| v.as_str())
-            .is_none_or(|value| value == REASONING_PLACEHOLDER);
-
-        if should_patch {
-            let reasoning_value = extract_thinking_text(last_message)
-                .or(latest_thinking.as_deref())
-                .unwrap_or(REASONING_PLACEHOLDER)
-                .to_string();
-
-            if let Some(object) = last_message.as_object_mut() {
-                let should_update = object
-                    .get("reasoning_content")
-                    .and_then(|v| v.as_str())
-                    .is_none_or(|current| current != reasoning_value);
-
-                if should_update {
-                    object.insert(
-                        "reasoning_content".to_string(),
-                        serde_json::json!(reasoning_value),
-                    );
-                    patched = true;
-                }
-            }
         }
     }
 
