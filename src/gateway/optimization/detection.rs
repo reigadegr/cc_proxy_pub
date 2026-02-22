@@ -1,8 +1,7 @@
+use serde_json::Value;
 use std::borrow::Cow;
 
-use serde_json::Value;
-
-const TITLE_GENERATION_PHRASE: &str = "write a 5-10 word title";
+const TITLE_GENERATION_PHRASE: &str = "Analyze if this message indicates a new conversation topic.";
 const SUGGESTION_MODE_MARKER: &str = "[SUGGESTION MODE:";
 const COMMAND_MARKER: &str = "Command:";
 const OUTPUT_MARKER: &str = "Output:";
@@ -24,7 +23,7 @@ pub fn is_quota_check_request(request: &Value) -> bool {
     }
 
     let text = extract_message_text(&messages[0]);
-    text.to_lowercase().contains("quota")
+    text.to_lowercase().contains("count")
 }
 
 pub fn detect_prefix_command(request: &Value) -> Option<String> {
@@ -43,20 +42,16 @@ pub fn detect_prefix_command(request: &Value) -> Option<String> {
 }
 
 pub fn is_title_generation_request(request: &Value) -> bool {
-    let Some(messages) = get_messages(request) else {
+    let Some(system) = get_system(request) else {
         return false;
     };
 
-    let Some(last_message) = messages.last() else {
+    let Some(last_system) = system.last() else {
         return false;
     };
 
-    if message_role(last_message) != Some("user") {
-        return false;
-    }
-
-    let text = extract_message_text(last_message);
-    text.to_lowercase().contains(TITLE_GENERATION_PHRASE)
+    let text = extract_system_text(last_system);
+    text.contains(TITLE_GENERATION_PHRASE)
 }
 
 pub fn is_suggestion_mode_request(request: &Value) -> bool {
@@ -125,6 +120,10 @@ fn get_messages(request: &Value) -> Option<&[Value]> {
     request.get("messages")?.as_array().map(Vec::as_slice)
 }
 
+fn get_system(request: &Value) -> Option<&[Value]> {
+    request.get("system")?.as_array().map(Vec::as_slice)
+}
+
 fn message_role(message: &Value) -> Option<&str> {
     message.get("role").and_then(Value::as_str)
 }
@@ -132,6 +131,12 @@ fn message_role(message: &Value) -> Option<&str> {
 fn extract_message_text(message: &Value) -> Cow<'_, str> {
     message
         .get("content")
+        .map_or(Cow::Borrowed(""), extract_text_from_content)
+}
+
+fn extract_system_text(message: &Value) -> Cow<'_, str> {
+    message
+        .get("text")
         .map_or(Cow::Borrowed(""), extract_text_from_content)
 }
 
@@ -163,7 +168,7 @@ mod tests {
     fn test_quota_check_request() {
         let request = json!({
             "max_tokens": 1,
-            "messages": [{"role": "user", "content": "check quota now"}]
+            "messages": [{"role": "user", "content": "count"}]
         });
         assert!(is_quota_check_request(&request));
 
@@ -225,7 +230,16 @@ mod tests {
     #[test]
     fn test_title_generation_detection() {
         let request = json!({
-            "messages": [{"role": "user", "content": "Please write a 5-10 word title"}]
+            "system": [
+                {
+                    "text": "x-anthropic-billing-header: cc_version=2.1.50.ae0; cc_entrypoint=cli; cch=00000;",
+                    "type": "text"
+                },
+                {
+                    "text": "Analyze if this message indicates a new conversation topic. If it does, extract a 2-3 word title that captures the new topic. Format your response as a JSON object with two fields: 'isNewTopic' (boolean) and 'title' (string, or null if isNewTopic is false).",
+                    "type": "text"
+                }
+            ]
         });
         assert!(is_title_generation_request(&request));
     }

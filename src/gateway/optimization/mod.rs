@@ -16,10 +16,10 @@ pub fn try_local_optimization(
         tracing::info!("Optimization: Intercepted count_tokens URL");
         return response_builder::build_text_response(
             "unknown-model",
-            "Quota check passed.",
+            "Max tokens passed.",
             10,
             5,
-            "quota_probe_mock",
+            "max_tokens_mock",
         );
     }
 
@@ -128,7 +128,7 @@ mod tests {
         let request = json!({
             "model": "claude-test",
             "max_tokens": 1,
-            "messages": [{"role": "user", "content": "quick quota probe"}]
+            "messages": [{"role": "user", "content": "count"}]
         });
         let body = to_json_bytes(&request);
 
@@ -170,9 +170,9 @@ mod tests {
     #[test]
     fn test_title_generation_skip_hit() {
         let request = json!({
-            "messages": [{
-                "role": "user",
-                "content": "Please write a 5-10 word title for this conversation"
+            "system": [{
+                "text": "Analyze if this message indicates a new conversation topic.",
+                "type": "text"
             }]
         });
         let body = to_json_bytes(&request);
@@ -253,10 +253,10 @@ mod tests {
             "count_tokens url should hit",
         );
 
-        assert_eq!(response.reason, "quota_probe_mock");
+        assert_eq!(response.reason, "max_tokens_mock");
         assert_eq!(
             get_text_from_optimization_response(&response.body),
-            "Quota check passed."
+            "Max tokens passed."
         );
     }
 
@@ -273,10 +273,10 @@ mod tests {
             "count_tokens url should hit even for invalid json",
         );
 
-        assert_eq!(response.reason, "quota_probe_mock");
+        assert_eq!(response.reason, "max_tokens_mock");
         assert_eq!(
             get_text_from_optimization_response(&response.body),
-            "Quota check passed."
+            "Max tokens passed."
         );
     }
 
