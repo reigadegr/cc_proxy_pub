@@ -33,8 +33,10 @@ const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
     ("<local-command-caveat>", "</local-command-caveat>"),
 ];
 
+/// 缺省的 `reasoning_content` 占位符
+const REASONING_PLACEHOLDER: &str = "[Previous reasoning not available in context]";
+
 /// 检查文本是否应该从 content 中移除
-#[inline]
 fn should_remove_content(text: &str) -> bool {
     let trimmed = text.trim();
     for (start, end) in CONTENT_TAG_FILTERS {
@@ -43,6 +45,21 @@ fn should_remove_content(text: &str) -> bool {
         }
     }
     false
+}
+
+/// 从 message.content 中提取 type=thinking 的 thinking 文本
+fn extract_thinking_text(message: &serde_json::Value) -> Option<&str> {
+    message
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|content| {
+            content
+                .iter()
+                .find(|block| block.get("type").and_then(|t| t.as_str()) == Some("thinking"))
+        })
+        .and_then(|block| block.get("thinking").and_then(|t| t.as_str()))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
 }
 
 /// 尝试解压 gzip 编码的响应体
@@ -115,8 +132,9 @@ fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
 /// 为 Kimi Thinking 模式补全缺失的 `reasoning_content`
 ///
 /// 在 thinking 启用时：
-/// - 给所有 `assistant` 消息补上 `reasoning_content`（若尚不存在）
-/// - 给 `messages` 数组最后一个元素补上 `reasoning_content`（若尚不存在），不区分 role
+/// - 优先从 message.content[type=thinking].thinking 提取文本
+/// - 给 `assistant` 消息补上/替换 `reasoning_content`（缺失或为占位符时）
+/// - 给 `messages` 最后一个元素补上/替换 `reasoning_content`（缺失或为占位符时），不区分 role
 fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
 
@@ -134,32 +152,77 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
     let messages = json.get_mut("messages")?.as_array_mut()?;
     let mut patched = false;
 
+    // 用于兜底：取最后一个可用的 thinking 文本
+    let latest_thinking = messages
+        .iter()
+        .rev()
+        .find_map(extract_thinking_text)
+        .map(str::to_string);
+
     for message in messages.iter_mut() {
         if message.get("role").and_then(|r| r.as_str()) != Some("assistant") {
             continue;
         }
-        if message.get("reasoning_content").is_some() {
+
+        let should_patch = message
+            .get("reasoning_content")
+            .and_then(|v| v.as_str())
+            .is_none_or(|value| value == REASONING_PLACEHOLDER);
+
+        if !should_patch {
             continue;
         }
+
+        let reasoning_value = extract_thinking_text(message)
+            .or(latest_thinking.as_deref())
+            .unwrap_or(REASONING_PLACEHOLDER)
+            .to_string();
+
         let Some(object) = message.as_object_mut() else {
             continue;
         };
-        object.insert(
-            "reasoning_content".to_string(),
-            serde_json::json!("[Previous reasoning not available in context]"),
-        );
-        patched = true;
+
+        let should_update = object
+            .get("reasoning_content")
+            .and_then(|v| v.as_str())
+            .is_none_or(|current| current != reasoning_value);
+
+        if should_update {
+            object.insert(
+                "reasoning_content".to_string(),
+                serde_json::json!(reasoning_value),
+            );
+            patched = true;
+        }
     }
 
-    if let Some(last_message) = messages.last_mut()
-        && last_message.get("reasoning_content").is_none()
-        && let Some(object) = last_message.as_object_mut()
-    {
-        object.insert(
-            "reasoning_content".to_string(),
-            serde_json::json!("[Previous reasoning not available in context]"),
-        );
-        patched = true;
+    if let Some(last_message) = messages.last_mut() {
+        let should_patch = last_message
+            .get("reasoning_content")
+            .and_then(|v| v.as_str())
+            .is_none_or(|value| value == REASONING_PLACEHOLDER);
+
+        if should_patch {
+            let reasoning_value = extract_thinking_text(last_message)
+                .or(latest_thinking.as_deref())
+                .unwrap_or(REASONING_PLACEHOLDER)
+                .to_string();
+
+            if let Some(object) = last_message.as_object_mut() {
+                let should_update = object
+                    .get("reasoning_content")
+                    .and_then(|v| v.as_str())
+                    .is_none_or(|current| current != reasoning_value);
+
+                if should_update {
+                    object.insert(
+                        "reasoning_content".to_string(),
+                        serde_json::json!(reasoning_value),
+                    );
+                    patched = true;
+                }
+            }
+        }
     }
 
     if patched {
