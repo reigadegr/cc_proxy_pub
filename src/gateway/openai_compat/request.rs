@@ -67,7 +67,7 @@ pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
     out.insert("stream".to_string(), Value::Bool(stream));
     out.insert("input".to_string(), Value::Array(input_items));
 
-    if let Some(instructions) = join_system_texts(instructions_texts) {
+    if let Some(instructions) = join_system_texts(&instructions_texts) {
         out.insert("instructions".to_string(), Value::String(instructions));
     }
 
@@ -228,17 +228,18 @@ fn claude_system_to_text(value: &Value) -> Option<String> {
                 .filter_map(|item| item.get("text").and_then(Value::as_str))
                 .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>();
-            join_system_texts(texts)
+            join_system_texts(&texts)
         }
         _ => None,
     }
 }
 
-fn join_system_texts(texts: Vec<String>) -> Option<String> {
+fn join_system_texts(texts: &[String]) -> Option<String> {
     let combined = texts
-        .into_iter()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
+        .iter()
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
     if combined.is_empty() {

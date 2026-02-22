@@ -61,11 +61,11 @@ pub fn extract_filepaths_from_command(command: &str, _output: &str) -> String {
     }
 
     if is_reading_command(base_command.as_str()) {
-        let filepaths: Vec<String> = parts
+        let filepaths: Vec<&str> = parts
             .iter()
             .skip(1)
+            .map(String::as_str)
             .filter(|part| !part.starts_with('-'))
-            .cloned()
             .collect();
 
         return build_filepaths_xml(&filepaths);
@@ -92,7 +92,7 @@ pub fn extract_filepaths_from_command(command: &str, _output: &str) -> String {
                 continue;
             }
 
-            positional.push(part.clone());
+            positional.push(part.as_str());
         }
 
         let filepaths = if pattern_provided_via_flag {
@@ -132,7 +132,7 @@ fn is_flag_with_argument(flag: &str) -> bool {
     matches!(flag, "-e" | "-f" | "-m" | "-A" | "-B" | "-C")
 }
 
-fn build_filepaths_xml(filepaths: &[String]) -> String {
+fn build_filepaths_xml(filepaths: &[&str]) -> String {
     if filepaths.is_empty() {
         return String::from(EMPTY_FILEPATHS_XML);
     }
