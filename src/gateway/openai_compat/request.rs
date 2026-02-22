@@ -9,6 +9,8 @@
 //! - `tool_result` → `function_call_output`
 //! - `max_tokens` → `max_output_tokens`
 
+use std::borrow::Cow;
+
 use bytes::Bytes;
 use serde_json::{Map, Value, json};
 
@@ -187,9 +189,9 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 let output_raw = block.get("content").cloned().unwrap_or_else(|| json!(""));
-                let output_text = match &output_raw {
-                    Value::String(text) => text,
-                    other => &serde_json::to_string(other).unwrap_or_default(),
+                let output_text: Cow<'_, str> = match &output_raw {
+                    Value::String(text) => Cow::Borrowed(text.as_str()),
+                    other => Cow::Owned(serde_json::to_string(other).unwrap_or_default()),
                 };
                 let is_error = block
                     .get("is_error")
@@ -205,7 +207,7 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                 let final_output = if is_error && !output_text.is_empty() {
                     format!("[ERROR] {output_text}")
                 } else {
-                    output_text.clone()
+                    output_text.into_owned()
                 };
                 item.insert("output".to_string(), Value::String(final_output));
                 input_items.push(Value::Object(item));
