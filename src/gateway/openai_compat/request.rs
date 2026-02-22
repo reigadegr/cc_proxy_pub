@@ -188,10 +188,10 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                     .get("tool_use_id")
                     .and_then(Value::as_str)
                     .unwrap_or("");
-                let output_raw = block.get("content").cloned().unwrap_or_else(|| json!(""));
-                let output_text: Cow<'_, str> = match &output_raw {
-                    Value::String(text) => Cow::Borrowed(text.as_str()),
-                    other => Cow::Owned(serde_json::to_string(other).unwrap_or_default()),
+                let output_text: Cow<'_, str> = match block.get("content") {
+                    Some(Value::String(text)) => Cow::Borrowed(text.as_str()),
+                    Some(other) => Cow::Owned(serde_json::to_string(other).unwrap_or_default()),
+                    None => Cow::Borrowed(""),
                 };
                 let is_error = block
                     .get("is_error")
@@ -278,7 +278,13 @@ fn normalize_text_block_in_place(block: &mut Value) {
     let text_value = object.get("text");
     let new_text = text_value.and_then(extract_text_value);
     if let Some(new_text) = new_text {
-        object.insert("text".to_string(), Value::String(new_text));
+        if matches!(
+            (&new_text, text_value),
+            (Cow::Borrowed(_), Some(Value::String(_)))
+        ) {
+            return;
+        }
+        object.insert("text".to_string(), Value::String(new_text.into_owned()));
         return;
     }
     // If text exists but is not convertible, coerce to empty string to satisfy schema.
@@ -287,9 +293,9 @@ fn normalize_text_block_in_place(block: &mut Value) {
     }
 }
 
-fn extract_text_value(value: &Value) -> Option<String> {
+fn extract_text_value(value: &Value) -> Option<Cow<'_, str>> {
     match value {
-        Value::String(text) => Some(text.clone()),
+        Value::String(text) => Some(Cow::Borrowed(text.as_str())),
         Value::Object(object) => {
             if let Some(text) = object.get("text") {
                 return extract_text_value(text);

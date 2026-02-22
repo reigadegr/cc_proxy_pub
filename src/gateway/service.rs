@@ -2,6 +2,7 @@ use crate::gateway::RequestStats;
 use http::HeaderMap;
 use rayon::prelude::*;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 use tracing::{info, warn};
 
@@ -18,15 +19,16 @@ fn estimate_tokens(text: &str) -> u64 {
 }
 
 // 从 content 字段提取实际文本（处理字符串或数组格式）
-fn extract_text(content: &Value) -> String {
+fn extract_text(content: &Value) -> Cow<'_, str> {
     match content {
-        Value::String(s) => s.clone(),
-        Value::Array(arr) => arr
-            .iter()
-            .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => content.to_string(),
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        Value::Array(arr) => Cow::Owned(
+            arr.iter()
+                .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join(""),
+        ),
+        _ => Cow::Owned(content.to_string()),
     }
 }
 
@@ -65,13 +67,13 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
         // 统计 messages
         if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
             // 预处理所有消息，提取纯文本和角色
-            let parsed_messages: Vec<(String, String, u64)> = messages
+            let parsed_messages: Vec<(Cow<'_, str>, Cow<'_, str>, u64)> = messages
                 .par_iter()
                 .filter_map(|msg| {
-                    let role = msg.get("role")?.as_str()?.to_string();
+                    let role = Cow::Borrowed(msg.get("role")?.as_str()?);
                     let content = msg.get("content")?;
                     let text = extract_text(content);
-                    let tokens = estimate_tokens(&text);
+                    let tokens = estimate_tokens(text.as_ref());
                     Some((role, text, tokens))
                 })
                 .collect();
@@ -85,7 +87,7 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
                 .map(|(idx, _)| idx);
 
             for (idx, (role, text, tokens)) in parsed_messages.iter().enumerate() {
-                match role.as_str() {
+                match role.as_ref() {
                     "user" => {
                         if is_system_reminder(text) {
                             system_tokens += tokens;

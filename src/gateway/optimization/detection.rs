@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde_json::Value;
 
 const TITLE_GENERATION_PHRASE: &str = "write a 5-10 word title";
@@ -89,7 +91,7 @@ pub fn detect_filepath_extraction_request(request: &Value) -> Option<(String, St
 
     let system_text = request
         .get("system")
-        .map_or_else(String::new, extract_text_from_content);
+        .map_or(Cow::Borrowed(""), extract_text_from_content);
     let system_text_lower = system_text.to_lowercase();
     let system_has_extract = system_text_lower.contains("extract any file paths")
         || system_text_lower.contains("file paths that this command");
@@ -123,26 +125,28 @@ fn message_role(message: &Value) -> Option<&str> {
     message.get("role").and_then(Value::as_str)
 }
 
-fn extract_message_text(message: &Value) -> String {
+fn extract_message_text(message: &Value) -> Cow<'_, str> {
     message
         .get("content")
-        .map_or_else(String::new, extract_text_from_content)
+        .map_or(Cow::Borrowed(""), extract_text_from_content)
 }
 
-fn extract_text_from_content(content: &Value) -> String {
+fn extract_text_from_content(content: &Value) -> Cow<'_, str> {
     match content {
-        Value::String(text) => text.clone(),
-        Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|block| {
-                block
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .or_else(|| block.get("thinking").and_then(Value::as_str))
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => String::new(),
+        Value::String(text) => Cow::Borrowed(text.as_str()),
+        Value::Array(blocks) => Cow::Owned(
+            blocks
+                .iter()
+                .filter_map(|block| {
+                    block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .or_else(|| block.get("thinking").and_then(Value::as_str))
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        ),
+        _ => Cow::Borrowed(""),
     }
 }
 
