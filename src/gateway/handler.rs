@@ -33,6 +33,13 @@ const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
     ("<local-command-caveat>", "</local-command-caveat>"),
 ];
 
+/// 需要从 tools[].description 中过滤的关键词
+const TOOLS_DESCRIPTION_FILTER_KEYWORDS: &[&str] = &[
+    "A powerful search tool built on ripgrep",
+    "Allows Claude to search the web",
+    "WebFetch WILL FAIL for authenticated or private URLs.",
+];
+
 /// 缺省的 `reasoning_content` 占位符
 const REASONING_PLACEHOLDER: &str = "[Previous reasoning not available in context]";
 
@@ -45,6 +52,13 @@ fn should_remove_content(text: &str) -> bool {
         }
     }
     false
+}
+
+/// 检查 tool.description 是否包含需要过滤的关键词
+fn should_remove_tool_by_description(description: &str) -> bool {
+    TOOLS_DESCRIPTION_FILTER_KEYWORDS
+        .iter()
+        .any(|keyword| description.contains(keyword))
 }
 
 /// 从 message.content 中提取 type=thinking 的 thinking 文本
@@ -223,6 +237,31 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
     }
 }
 
+/// 过滤 tools 数组中 description 命中关键词的元素
+fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
+
+    let tools = json.get_mut("tools")?.as_array_mut()?;
+    let original_len = tools.len();
+
+    tools.retain(|tool| {
+        tool.get("description")
+            .and_then(|d| d.as_str())
+            .is_none_or(|description| !should_remove_tool_by_description(description))
+    });
+
+    if tools.len() < original_len {
+        tracing::info!(
+            "🧹 已过滤 tools 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
+            original_len,
+            tools.len(),
+            original_len - tools.len()
+        );
+    }
+
+    serde_json::to_vec(&json).ok().map(Into::into)
+}
+
 /// 过滤 messages[].content[] 数组，移除无用标签内容
 ///
 /// Claude CLI 发送的请求中，content 数组可能包含大量无用的标签内容：
@@ -338,6 +377,13 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     // 过滤 messages.content 中占用大量 tokens 的无用标签
     if !body_bytes.is_empty()
         && let Some(filtered) = filter_messages_content(&body_bytes)
+    {
+        body_bytes = filtered;
+    }
+
+    // 过滤 tools.description 命中关键词的工具定义
+    if !body_bytes.is_empty()
+        && let Some(filtered) = filter_tools_by_description(&body_bytes)
     {
         body_bytes = filtered;
     }
