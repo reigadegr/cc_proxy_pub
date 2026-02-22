@@ -114,8 +114,9 @@ fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
 
 /// 为 Kimi Thinking 模式补全缺失的 `reasoning_content`
 ///
-/// Kimi 要求当 thinking 启用时，包含 `tool_use` 的 assistant 消息必须包含
-/// `reasoning_content` 字段（与 content 同级的字符串字段）。
+/// 在 thinking 启用时：
+/// - 给所有 `assistant` 消息补上 `reasoning_content`（若尚不存在）
+/// - 给 `messages` 数组最后一个元素补上 `reasoning_content`（若尚不存在），不区分 role
 fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
 
@@ -134,36 +135,35 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
     let mut patched = false;
 
     for message in messages.iter_mut() {
-        // 只处理 assistant 消息
         if message.get("role").and_then(|r| r.as_str()) != Some("assistant") {
             continue;
         }
-
-        // 检查 content 中是否包含 tool_use
-        let has_tool_use = message
-            .get("content")
-            .and_then(|c| c.as_array())
-            .is_some_and(|content| {
-                content
-                    .iter()
-                    .any(|block| block.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-            });
-
-        // 检查是否已有 reasoning_content 字段
-        let has_reasoning = message.get("reasoning_content").is_some();
-
-        // 如果包含 tool_use 但缺少 reasoning_content，添加占位符
-        if has_tool_use && !has_reasoning {
-            message.as_object_mut()?.insert(
-                "reasoning_content".to_string(),
-                serde_json::json!("[Previous reasoning not available in context]"),
-            );
-            patched = true;
-            tracing::debug!("Patched missing reasoning_content for assistant tool_use message");
+        if message.get("reasoning_content").is_some() {
+            continue;
         }
+        let Some(object) = message.as_object_mut() else {
+            continue;
+        };
+        object.insert(
+            "reasoning_content".to_string(),
+            serde_json::json!("[Previous reasoning not available in context]"),
+        );
+        patched = true;
+    }
+
+    if let Some(last_message) = messages.last_mut()
+        && last_message.get("reasoning_content").is_none()
+        && let Some(object) = last_message.as_object_mut()
+    {
+        object.insert(
+            "reasoning_content".to_string(),
+            serde_json::json!("[Previous reasoning not available in context]"),
+        );
+        patched = true;
     }
 
     if patched {
+        tracing::debug!("Patched missing reasoning_content for thinking mode messages");
         serde_json::to_vec(&json).ok().map(Into::into)
     } else {
         None
