@@ -10,10 +10,8 @@ use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
-use salvo::http::ResBody;
-use salvo::prelude::*;
-use std::io::Read;
-use std::sync::Arc;
+use salvo::{http::ResBody, prelude::*};
+use std::{io::Read, sync::Arc};
 
 /// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
 const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
@@ -288,7 +286,11 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
 
     // 优先检查本地优化（不需要选择 upstream/key）
-    if let Some(local_response) = try_local_optimization(&body_bytes, &cfg.optimizations) {
+    if let Some(local_response) = try_local_optimization(
+        &body_bytes,
+        req.uri().to_string().as_str(),
+        &cfg.optimizations,
+    ) {
         tracing::info!("✅ 本地优化命中: {}", local_response.reason);
 
         res.status_code(StatusCode::OK);

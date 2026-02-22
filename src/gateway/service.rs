@@ -2,8 +2,7 @@ use crate::gateway::RequestStats;
 use http::HeaderMap;
 use rayon::prelude::*;
 use serde_json::Value;
-use std::borrow::Cow;
-use std::sync::atomic::Ordering;
+use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::{info, warn};
 
 fn estimate_tokens(text: &str) -> u64 {

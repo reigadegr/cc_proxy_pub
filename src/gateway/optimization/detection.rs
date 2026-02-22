@@ -7,6 +7,10 @@ const SUGGESTION_MODE_MARKER: &str = "[SUGGESTION MODE:";
 const COMMAND_MARKER: &str = "Command:";
 const OUTPUT_MARKER: &str = "Output:";
 
+pub fn is_count_tokens_url(url: &str) -> bool {
+    url.to_ascii_lowercase().contains("count_tokens")
+}
+
 pub fn is_quota_check_request(request: &Value) -> bool {
     if request.get("max_tokens").and_then(Value::as_i64) != Some(1) {
         return false;
@@ -168,6 +172,13 @@ mod tests {
             "messages": [{"role": "user", "content": "hello"}]
         });
         assert!(!is_quota_check_request(&non_quota));
+    }
+
+    #[test]
+    fn test_count_tokens_url_detection() {
+        assert!(is_count_tokens_url("/v1/messages/count_tokens"));
+        assert!(is_count_tokens_url("/api?route=count_tokens"));
+        assert!(!is_count_tokens_url("/v1/messages"));
     }
 
     #[test]

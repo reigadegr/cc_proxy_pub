@@ -9,8 +9,20 @@ pub use response_builder::OptimizationResponse;
 
 pub fn try_local_optimization(
     body_bytes: &[u8],
+    request_url: &str,
     flags: &OptimizationConfig,
 ) -> Option<OptimizationResponse> {
+    if flags.enable_network_probe_mock && detection::is_count_tokens_url(request_url) {
+        tracing::info!("Optimization: Intercepted count_tokens URL");
+        return response_builder::build_text_response(
+            "unknown-model",
+            "Quota check passed.",
+            10,
+            5,
+            "quota_probe_mock",
+        );
+    }
+
     let request: Value = serde_json::from_slice(body_bytes).ok()?;
 
     if flags.enable_network_probe_mock && detection::is_quota_check_request(&request) {
@@ -121,7 +133,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default()),
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default()),
             "quota probe should hit",
         );
 
@@ -144,7 +156,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default()),
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default()),
             "prefix optimization should hit",
         );
 
@@ -166,7 +178,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default()),
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default()),
             "title optimization should hit",
         );
 
@@ -185,7 +197,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default()),
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default()),
             "suggestion optimization should hit",
         );
 
@@ -204,7 +216,7 @@ mod tests {
         let body = to_json_bytes(&request);
 
         let response = require_optimization_response(
-            try_local_optimization(&body, &OptimizationConfig::default()),
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default()),
             "filepath optimization should hit",
         );
 
@@ -222,8 +234,50 @@ mod tests {
         });
         let body = to_json_bytes(&request);
 
-        let response = try_local_optimization(&body, &OptimizationConfig::default());
+        let response =
+            try_local_optimization(&body, "/v1/messages", &OptimizationConfig::default());
         assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_count_tokens_url_hit() {
+        let request = json!({"model": "claude-test"});
+        let body = to_json_bytes(&request);
+
+        let response = require_optimization_response(
+            try_local_optimization(
+                &body,
+                "/v1/messages/count_tokens?foo=bar",
+                &OptimizationConfig::default(),
+            ),
+            "count_tokens url should hit",
+        );
+
+        assert_eq!(response.reason, "quota_probe_mock");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "Quota check passed."
+        );
+    }
+
+    #[test]
+    fn test_count_tokens_url_hit_with_invalid_json_body() {
+        let body = b"not json";
+
+        let response = require_optimization_response(
+            try_local_optimization(
+                body,
+                "/v1/messages/count_tokens?foo=bar",
+                &OptimizationConfig::default(),
+            ),
+            "count_tokens url should hit even for invalid json",
+        );
+
+        assert_eq!(response.reason, "quota_probe_mock");
+        assert_eq!(
+            get_text_from_optimization_response(&response.body),
+            "Quota check passed."
+        );
     }
 
     #[test]
@@ -239,7 +293,7 @@ mod tests {
             ..OptimizationConfig::default()
         };
 
-        let response = try_local_optimization(&body, &flags);
+        let response = try_local_optimization(&body, "/v1/messages", &flags);
         assert!(response.is_none());
     }
 }

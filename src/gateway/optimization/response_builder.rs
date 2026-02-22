@@ -1,6 +1,8 @@
-use serde_json::json;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use serde_json::{Value, json};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 static RESPONSE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -41,5 +43,3 @@ fn build_message_id() -> String {
     let sequence = RESPONSE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("msg_{millis}_{sequence}")
 }
-
-use serde_json::Value;
