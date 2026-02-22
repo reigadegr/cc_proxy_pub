@@ -420,9 +420,10 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
                     .inspect(|frame| {
                         if let Ok(f) = frame
                             && let Some(data) = f.data_ref()
-                                && let Ok(s) = std::str::from_utf8(data) {
-                                    tracing::info!("{}", s);
-                                }
+                            && let Ok(s) = std::str::from_utf8(data)
+                        {
+                            tracing::info!("{}", s);
+                        }
                     })
                     .filter_map(|frame| async move {
                         match frame {

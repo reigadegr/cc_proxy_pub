@@ -188,8 +188,8 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                     .unwrap_or("");
                 let output_raw = block.get("content").cloned().unwrap_or_else(|| json!(""));
                 let output_text = match &output_raw {
-                    Value::String(text) => text.clone(),
-                    other => serde_json::to_string(other).unwrap_or_default(),
+                    Value::String(text) => text,
+                    other => &serde_json::to_string(other).unwrap_or_default(),
                 };
                 let is_error = block
                     .get("is_error")
@@ -205,13 +205,9 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
                 let final_output = if is_error && !output_text.is_empty() {
                     format!("[ERROR] {output_text}")
                 } else {
-                    output_text
+                    output_text.clone()
                 };
                 item.insert("output".to_string(), Value::String(final_output));
-
-                if !matches!(output_raw, Value::String(_)) {
-                    item.insert("output_parts".to_string(), output_raw);
-                }
                 input_items.push(Value::Object(item));
             }
             _ => {}
