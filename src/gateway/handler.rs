@@ -110,6 +110,64 @@ fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     serde_json::to_vec(&json).ok().map(Into::into)
 }
 
+/// 为 Kimi Thinking 模式补全缺失的 `reasoning_content`
+///
+/// Kimi 要求当 thinking 启用时，包含 `tool_use` 的 assistant 消息必须包含
+/// `reasoning_content` 字段（与 content 同级的字符串字段）。
+fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
+
+    // 检查是否启用了 thinking 模式
+    let thinking_enabled = json
+        .get("thinking")
+        .and_then(|t| t.get("type"))
+        .and_then(|t| t.as_str())
+        == Some("enabled");
+
+    if !thinking_enabled {
+        return None;
+    }
+
+    let messages = json.get_mut("messages")?.as_array_mut()?;
+    let mut patched = false;
+
+    for message in messages.iter_mut() {
+        // 只处理 assistant 消息
+        if message.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+            continue;
+        }
+
+        // 检查 content 中是否包含 tool_use
+        let has_tool_use = message
+            .get("content")
+            .and_then(|c| c.as_array())
+            .is_some_and(|content| {
+                content
+                    .iter()
+                    .any(|block| block.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+            });
+
+        // 检查是否已有 reasoning_content 字段
+        let has_reasoning = message.get("reasoning_content").is_some();
+
+        // 如果包含 tool_use 但缺少 reasoning_content，添加占位符
+        if has_tool_use && !has_reasoning {
+            message.as_object_mut()?.insert(
+                "reasoning_content".to_string(),
+                serde_json::json!("[Previous reasoning not available in context]"),
+            );
+            patched = true;
+            tracing::debug!("Patched missing reasoning_content for assistant tool_use message");
+        }
+    }
+
+    if patched {
+        serde_json::to_vec(&json).ok().map(Into::into)
+    } else {
+        None
+    }
+}
+
 /// 过滤 messages[].content[] 数组，移除无用标签内容
 ///
 /// Claude CLI 发送的请求中，content 数组可能包含大量无用的标签内容：
@@ -302,7 +360,15 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
             }
         }
     } else {
-        body_bytes
+        // 直接转发 Anthropic 格式时，为 Kimi 等支持 Thinking 的模型补全 reasoning_content
+        if body_bytes.is_empty() {
+            body_bytes
+        } else if let Some(patched) = patch_reasoning_for_thinking_mode(&body_bytes) {
+            tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
+            patched
+        } else {
+            body_bytes
+        }
     };
 
     // 记录请求体并计算 token
