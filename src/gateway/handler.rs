@@ -426,6 +426,7 @@ pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Respo
     if oai_api {
         upstream_url = upstream_url.replace("messages", "responses");
     }
+    upstream_url = upstream_url.replace("claude/", "");
     while upstream_url.contains("//") {
         upstream_url = upstream_url.replace("//", "/");
     }

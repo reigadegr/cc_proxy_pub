@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
                 .inject(Arc::clone(gateway.stats()))
                 .inject(Arc::clone(gateway.client())),
         )
-        .push(Router::with_path("{**rest}").goal(proxy_handler));
+        .push(Router::with_path("claude/{**rest}").goal(proxy_handler));
 
     // 启动服务器
     let acceptor = TcpListener::new("0.0.0.0:9066").bind().await;
