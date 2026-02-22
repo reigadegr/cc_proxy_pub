@@ -12,6 +12,7 @@
 use std::borrow::Cow;
 
 use bytes::Bytes;
+use rayon::prelude::*;
 use serde_json::{Map, Value, json};
 
 use super::media;
@@ -41,8 +42,6 @@ pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
         .filter(|value| *value > 0)
         .unwrap_or(4096);
 
-    let mut input_items = Vec::new();
-
     let mut instructions_texts = Vec::new();
     if let Some(system) = object.get("system")
         && let Some(text) = claude_system_to_text(system)
@@ -54,9 +53,11 @@ pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
     let Some(messages) = object.get("messages").and_then(Value::as_array) else {
         return Err("Request must include messages.".to_string());
     };
-    for message in messages {
-        claude_message_to_responses_input_items(message, &mut input_items);
-    }
+    let per_message_items: Vec<Vec<Value>> = messages
+        .par_iter()
+        .map(claude_message_to_responses_input_items)
+        .collect();
+    let input_items: Vec<Value> = per_message_items.into_iter().flatten().collect();
 
     let mut out = Map::new();
     out.insert("model".to_string(), Value::String(model.to_string()));
@@ -108,16 +109,18 @@ pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
         .map_err(|err| format!("Failed to serialize request: {err}"))
 }
 
-fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Vec<Value>) {
+fn claude_message_to_responses_input_items(message: &Value) -> Vec<Value> {
+    let mut input_items = Vec::new();
+
     let Some(message) = message.as_object() else {
-        return;
+        return input_items;
     };
     let role = message
         .get("role")
         .and_then(Value::as_str)
         .unwrap_or("user");
     if role == "system" {
-        return;
+        return input_items;
     }
 
     let content = message.get("content");
@@ -215,6 +218,8 @@ fn claude_message_to_responses_input_items(message: &Value, input_items: &mut Ve
             _ => {}
         }
     }
+
+    input_items
 }
 
 fn claude_system_to_text(value: &Value) -> Option<String> {
