@@ -75,10 +75,24 @@ Claude Code CLI 在使用过程中会发送一些"探测性"请求（如配额�
 
 ```bash
 # 方法 1: 环境变量
-export ANTHROPIC_BASE_URL="http://localhost:9066/claude"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
 ```
 
-或者配置`~/.claude/settings.json`也可以。其中的api key值会被本工具覆盖再发给上游，可随便写
+或者在 `~/.claude/settings.json` 中这样配置：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9066/claude",
+    "ANTHROPIC_AUTH_TOKEN": "anything"
+  }
+}
+```
+
+其中：
+
+- `ANTHROPIC_BASE_URL` 需要指向 `http://127.0.0.1:9066/claude`
+- `ANTHROPIC_AUTH_TOKEN` 配置成什么都无所谓，本工具转发时会覆盖该值
 
 ### 📦 构建项目
 
