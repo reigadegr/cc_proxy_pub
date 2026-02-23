@@ -8,10 +8,8 @@
 //! - `output_text` → text
 //! - `reasoning_text` → thinking
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
 
 /// `OpenAI` Responses 响应 → Anthropic 响应
 pub fn responses_response_to_anthropic(
@@ -98,12 +96,7 @@ pub fn responses_response_to_anthropic(
 
     let mut content = Vec::new();
     if !thinking_text.trim().is_empty() {
-        let signature = thinking_signature(&thinking_text);
-        let mut block = json!({ "type": "thinking", "thinking": thinking_text });
-        if let (Some(signature), Some(block)) = (signature, block.as_object_mut()) {
-            block.insert("signature".to_string(), Value::String(signature));
-        }
-        content.push(block);
+        content.push(json!({ "type": "thinking", "thinking": thinking_text }));
     }
     if !combined_text.trim().is_empty() || tool_uses.is_empty() {
         content.push(json!({ "type": "text", "text": combined_text }));
@@ -149,15 +142,6 @@ fn responses_function_call_to_tool_use(item: &Map<String, Value>) -> Option<Valu
         "name": name,
         "input": input
     }))
-}
-
-fn thinking_signature(text: &str) -> Option<String> {
-    if text.trim().is_empty() {
-        return None;
-    }
-    let mut hasher = Sha256::new();
-    hasher.update(text.as_bytes());
-    Some(STANDARD.encode(hasher.finalize()))
 }
 
 fn map_openai_usage_to_anthropic_usage(usage: &Map<String, Value>) -> Value {
