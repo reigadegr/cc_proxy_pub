@@ -38,6 +38,11 @@ const TOOLS_DESCRIPTION_FILTER_KEYWORDS: &[&str] = &[
     "A powerful search tool built on ripgrep",
     "Allows Claude to search the web",
     "WebFetch WILL FAIL for authenticated or private URLs.",
+    "List all available sources (websites) in the Actionbook database.",
+    "Search for sources (websites) by keyword.",
+    "Search for website action manuals by keyword.",
+    "Get complete action details by area_id, including DOM selectors and element information.",
+    "Get complete action details by action ID, including DOM selectors and step-by-step instructions.",
 ];
 
 /// 缺省的 `reasoning_content` 占位符
