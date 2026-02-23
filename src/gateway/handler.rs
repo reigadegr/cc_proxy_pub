@@ -212,7 +212,6 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
 
     let messages = json.get_mut("messages")?.as_array_mut()?;
     let mut patched = false;
-    let last_idx = messages.len().saturating_sub(1);
 
     // 用于兜底：取最后一个可用的 thinking 文本
     let latest_thinking = messages
@@ -221,11 +220,10 @@ fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> 
         .find_map(extract_thinking_text)
         .map(str::to_string);
 
-    for (idx, message) in messages.iter_mut().enumerate() {
+    for message in messages.iter_mut() {
         let is_assistant = message.get("role").and_then(|r| r.as_str()) == Some("assistant");
-        let is_last = idx == last_idx;
 
-        if !is_assistant && !is_last {
+        if !is_assistant {
             continue;
         }
 
