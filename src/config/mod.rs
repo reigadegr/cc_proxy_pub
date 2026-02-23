@@ -53,6 +53,8 @@ pub struct OptimizationConfig {
     #[serde(default = "default_true")]
     pub enable_fast_prefix_detection: bool,
     #[serde(default = "default_true")]
+    pub enable_historical_analysis_mock: bool,
+    #[serde(default = "default_true")]
     pub enable_title_generation_skip: bool,
     #[serde(default = "default_true")]
     pub enable_suggestion_mode_skip: bool,
@@ -65,6 +67,7 @@ impl Default for OptimizationConfig {
         Self {
             enable_network_probe_mock: default_true(),
             enable_fast_prefix_detection: default_true(),
+            enable_historical_analysis_mock: default_true(),
             enable_title_generation_skip: default_true(),
             enable_suggestion_mode_skip: default_true(),
             enable_filepath_extraction_mock: default_true(),

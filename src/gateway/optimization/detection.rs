@@ -1,6 +1,7 @@
 use serde_json::Value;
 use std::borrow::Cow;
 
+const HISTORY_ANALYSIS_PARSE: &str = "You are an expert at analyzing git history.";
 const TITLE_GENERATION_PHRASE: &str = "Analyze if this message indicates a new conversation topic.";
 const SUGGESTION_MODE_MARKER: &str = "[SUGGESTION MODE:";
 const COMMAND_MARKER: &str = "Command:";
@@ -39,6 +40,19 @@ pub fn detect_prefix_command(request: &Value) -> Option<String> {
 
     let start = content.rfind(COMMAND_MARKER)? + COMMAND_MARKER.len();
     Some(content[start..].trim().to_owned())
+}
+
+pub fn is_historical_analysis_request(request: &Value) -> bool {
+    let Some(system) = get_system(request) else {
+        return false;
+    };
+
+    let Some(last_system) = system.last() else {
+        return false;
+    };
+
+    let text = extract_system_text(last_system);
+    text.contains(HISTORY_ANALYSIS_PARSE)
 }
 
 pub fn is_title_generation_request(request: &Value) -> bool {

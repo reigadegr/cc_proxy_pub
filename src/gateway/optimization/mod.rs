@@ -36,6 +36,18 @@ pub fn try_local_optimization(
         );
     }
 
+    if flags.enable_historical_analysis_mock && detection::is_historical_analysis_request(&request)
+    {
+        tracing::info!("Optimization: Skipped historical analysis request");
+        return response_builder::build_text_response(
+            "unknown-model",
+            "historical analysis passed.",
+            100,
+            5,
+            "historical_analysis_skip",
+        );
+    }
+
     if flags.enable_fast_prefix_detection
         && let Some(command) = detection::detect_prefix_command(&request)
     {
