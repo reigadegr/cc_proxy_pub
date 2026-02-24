@@ -158,13 +158,28 @@ pub fn fix_malformed_function_call_outputs(body: &mut Value) {
             };
 
             // 尝试将 output 解析为 JSON 数组
-            if let Ok(parsed_output) = serde_json::from_str::<serde_json::Value>(output_str)
+            if let Ok(mut parsed_output) = serde_json::from_str::<serde_json::Value>(output_str)
                 && parsed_output.is_array()
             {
                 // output 是 JSON 数组，需要转换为 message 格式
                 // 移除 function_call_output 的字段
                 item_obj.remove("call_id");
                 item_obj.remove("output");
+
+                // 处理 content 数组：
+                // 1. 移除第二个元素（索引1）
+                // 2. 将第一个元素（索引0）的 type 改为 "output_text"
+                if let Some(content_array) = parsed_output.as_array_mut() {
+                    // 移除索引1的元素（如果存在）
+                    if content_array.len() > 1 {
+                        content_array.remove(1);
+                    }
+                    // 修改索引0元素的 type 为 "output_text"
+                    if let Some(first_item) = content_array.first_mut()
+                        && let Some(first_obj) = first_item.as_object_mut() {
+                            first_obj.insert("type".to_string(), json!("output_text"));
+                        }
+                }
 
                 // 添加 message 字段
                 item_obj.insert("type".to_string(), json!("message"));
@@ -388,6 +403,7 @@ fn extract_text_value(value: &Value) -> Option<Cow<'_, str>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -435,20 +451,19 @@ mod tests {
         // 不应该再有 call_id 和 output 字段
         assert!(input[1].get("call_id").is_none());
         assert!(input[1].get("output").is_none());
-        // content 应该是解析后的数组
+        // content 应该是解析后的数组（第二个元素已被移除，只剩一个）
         let content = input[1].get("content").and_then(|v| v.as_array()).unwrap();
-        assert_eq!(content.len(), 2);
-        // 验证第一个 text 包含预期的内容
+        assert_eq!(content.len(), 1);
+        // 验证第一个元素的 type 已被改为 "output_text"
+        assert_eq!(
+            content[0].get("type").unwrap().as_str().unwrap(),
+            "output_text"
+        );
+        // 验证 text 包含预期的内容
         let first_text = content[0].get("text").unwrap().as_str().unwrap();
         assert!(
             first_text.contains("我这边先说明下：当前环境里终端命令调用被拒绝了"),
             "First text should contain expected content, got: {first_text}"
-        );
-        // 验证第二个 text 包含 agentId
-        let second_text = content[1].get("text").unwrap().as_str().unwrap();
-        assert!(
-            second_text.contains("agentId: a883913cc85bbedd1"),
-            "Second text should contain agentId, got: {second_text}"
         );
 
         // 第三个元素：正常的 function_call_output 应该保持不变
@@ -601,7 +616,13 @@ mod tests {
         assert_eq!(input[0].get("role").unwrap().as_str().unwrap(), "assistant");
 
         let content = input[0].get("content").and_then(|v| v.as_array()).unwrap();
-        assert_eq!(content.len(), 2);
+        // 第二个元素已被移除，只剩一个元素
+        assert_eq!(content.len(), 1);
+        // 第一个元素的 type 应该被改为 "output_text"
+        assert_eq!(
+            content[0].get("type").unwrap().as_str().unwrap(),
+            "output_text"
+        );
         assert!(
             content[0]
                 .get("text")
@@ -609,14 +630,6 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("终端命令调用被拒绝了")
-        );
-        assert!(
-            content[1]
-                .get("text")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .contains("agentId: a883913cc85bbedd1")
         );
     }
 }
