@@ -1,0 +1,22 @@
+# example
+# upstream可以写很多组，api_keys可以写很多个
+# 负载均衡的选择上游，再负载均衡的选key
+# 修改立即生效，如果不生效请反馈
+
+[[upstream]]
+endpoint = "https://open.bigmodel.cn/api/anthropic"
+model = "glm-4.7"
+api_keys = ["your_api_key1", "your_api_key2"]
+
+[[upstream]]
+endpoint = "https://open.bigmodel.cn/api/anthropic"
+model = "glm-4.7"
+api_keys = ["your_api_key1", "your_api_key2"]
+
+[optimizations]
+enable_network_probe_mock = true
+enable_fast_prefix_detection = true
+enable_historical_analysis_mock = true
+enable_title_generation_skip = true
+enable_suggestion_mode_skip = true
+enable_filepath_extraction_mock = true

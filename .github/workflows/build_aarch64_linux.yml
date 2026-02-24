@@ -1,0 +1,141 @@
+name: Release Build aarch64-unknown-linux-musl
+
+on:
+  workflow_dispatch:
+    inputs:
+      TOOLCHAINS:
+        type: choice
+        description: "使用的工具链"
+        required: true
+        default: "nightly"
+        options:
+          - "nightly"
+          - "stable"
+      TARGET:
+        type: choice
+        description: "编译的目标三元组"
+        required: true
+        default: "aarch64-unknown-linux-musl"
+        options:
+          - "aarch64-unknown-linux-musl"
+          - "x86_64-unknown-linux-musl"
+          - "x86_64-pc-windows-msvc"
+      RUNNER:
+        type: choice
+        description: "运行器使用的操作系统"
+        required: true
+        default: "ubuntu"
+        options:
+          - "ubuntu"
+          - "windows"
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Optimize build performance
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # Build strategy check - determine build type based on trigger
+  build-check:
+    name: Build Strategy Check
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      build_type: ${{ steps.check.outputs.build_type }}
+      version: ${{ steps.check.outputs.version }}
+      short_sha: ${{ steps.check.outputs.short_sha }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Debug Show Selected Inputs
+        run: |
+          echo "-----------------------"
+          echo "Selected TOOLCHAINS: ${{ github.event.inputs.TOOLCHAINS }}"
+          echo "Selected TARGET: ${{ github.event.inputs.TARGET }}"
+          echo "Selected RUNNER: ${{ github.event.inputs.RUNNER }}"
+          echo "-----------------------"
+
+  # Build RustFS binaries
+  build-utils:
+    name: Build Utils
+    needs: [build-check]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      RUSTFLAGS: ${{ matrix.cross == 'false' && '-C target-cpu=native' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - os: ${{ github.event.inputs.RUNNER }}-latest
+            target: ${{ github.event.inputs.TARGET }}
+            cross: ${{ github.event.inputs.RUNNER == 'ubuntu' && 'true' || 'false' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust environment
+        uses: ./.github/actions/setup
+        with:
+          rust-version: ${{ github.event.inputs.TOOLCHAINS }}
+          target: ${{ matrix.target }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          install-cross-tools: ${{ matrix.cross }}
+
+      - name: Configure Git
+        shell: bash
+        run: |
+          git config --global user.name "Numbersf"
+          git config --global user.email "263623064@qq.com"
+
+      - name: Setup TimeZone
+        if: runner.os == 'Linux'
+        run: |
+          sudo -E rm -rf /etc/localtime
+          sudo -E ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+      - name: Clone utils sources
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/reigadegr/pga_demo
+          cp -rf   ./pga_demo/*  .
+
+      - name: Build Rust Utils
+        shell: bash
+        run: |
+          rm -rf ./*/target && echo "删除了target" || echo "无需删除"
+          mkdir "${{ matrix.target }}"_utils
+
+          toolchain="${{ github.event.inputs.TOOLCHAINS }}"
+          file="build_"$toolchain".sh"
+          
+          if [ "${{ matrix.cross }}" = "false" ]; then
+            file="build_"$toolchain"_no_cross.sh"
+          fi
+          bin_name="pga_demo"
+          url="https://github.com/reigadegr/rust_cli_action/raw/main/$file"
+          echo "脚本直链: $url"
+          curl -L $url -o "$file"
+          sh "$file" "${{ matrix.target }}" "$bin_name" || continue
+          
+          if [ "${{ github.event.inputs.RUNNER }}" = "windows" ]; then
+              bin_name=$bin_name.exe
+          fi          
+
+          file="$(find target -name "$bin_name")"
+          echo "$(realpath $file)"              
+          dd if=target/"${{ matrix.target }}"/release/$bin_name of=./"${{ matrix.target }}"_utils/$bin_name
+
+      - name: Upload to GitHub artifacts
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: ${{ matrix.target }}_utils
+          path: ${{ matrix.target }}_utils/*
+          retention-days: 3

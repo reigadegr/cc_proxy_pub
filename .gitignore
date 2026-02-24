@@ -1,0 +1,7 @@
+/target
+**/*.bak
+*lock*
+.idea
+*patch
+**/*.json
+**/*.txt
