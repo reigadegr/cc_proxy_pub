@@ -31,6 +31,7 @@ const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
     ("<local-command-stdout>", "</local-command-stdout>"),
     ("<command-name>", "</command-name>"),
     ("<local-command-caveat>", "</local-command-caveat>"),
+    ("<command-name>", "</command-args>"),
 ];
 
 /// 需要从 tools[].description 中过滤的关键词

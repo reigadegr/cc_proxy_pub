@@ -119,36 +119,9 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
 
 // 辅助函数：分段打印大字符串，避免日志截断和字符边界 panic
 pub fn log_full_body(body: &str) {
-    const CHUNK_SIZE: usize = 8000;
-
     let len = body.len();
     info!("=== 请求体 (共 {} 字节) ===", len);
-
-    if len <= CHUNK_SIZE {
-        info!("{}", body);
-    } else {
-        let total_chunks = len.div_ceil(CHUNK_SIZE);
-        let mut start = 0;
-
-        for i in 0..total_chunks {
-            // 计算理论结束位置
-            let mut end = (start + CHUNK_SIZE).min(len);
-
-            // 🔑 关键修复：确保结束位置是字符边界（UTF-8 safe）
-            // 如果不是字符边界，向前调整直到是边界
-            end = body.floor_char_boundary(end);
-
-            // 安全切片（get 返回 Option，不会 panic）
-            if let Some(chunk) = body.get(start..end) {
-                info!("--- 第 {}/{} 段 ---\n{}", i + 1, total_chunks, chunk);
-            } else {
-                warn!("无法获取第 {}/{} 段内容", i + 1, total_chunks);
-                break;
-            }
-
-            start = end;
-        }
-    }
+    info!("\n{}", body);
     info!("=== 请求体结束 ===");
 }
 
