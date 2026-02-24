@@ -5,3 +5,4 @@
 *patch
 **/*.json
 **/*.txt
+.claude
