@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::config::UpstreamConfig;
+use super::UpstreamConfig;
 
 /// Upstream 选择器，使用双层 round-robin 策略
 pub struct UpstreamSelector {

@@ -1,4 +1,5 @@
 pub mod format;
+pub mod selector;
 
 use std::{
     env, fs,
@@ -17,7 +18,7 @@ use notify::{
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
-use crate::upstream_selector::UpstreamSelector;
+use self::selector::UpstreamSelector;
 
 /// 全局原子配置，支持热重载
 pub struct AtomicConfig {
