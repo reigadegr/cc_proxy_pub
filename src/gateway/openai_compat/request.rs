@@ -11,12 +11,11 @@
 
 use std::borrow::Cow;
 
+use super::media;
+use super::tools;
 use bytes::Bytes;
 use rayon::prelude::*;
 use serde_json::{Map, Value, json};
-
-use super::media;
-use super::tools;
 
 /// Anthropic Claude 请求 → `OpenAI` Responses 请求
 pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
@@ -158,7 +157,7 @@ pub fn fix_malformed_function_call_outputs(body: &mut Value) {
             };
 
             // 尝试将 output 解析为 JSON 数组
-            if let Ok(mut parsed_output) = serde_json::from_str::<serde_json::Value>(output_str)
+            if let Ok(mut parsed_output) = serde_json::from_str::<Value>(output_str)
                 && parsed_output.is_array()
             {
                 // output 是 JSON 数组，需要转换为 message 格式
@@ -176,9 +175,10 @@ pub fn fix_malformed_function_call_outputs(body: &mut Value) {
                     }
                     // 修改索引0元素的 type 为 "output_text"
                     if let Some(first_item) = content_array.first_mut()
-                        && let Some(first_obj) = first_item.as_object_mut() {
-                            first_obj.insert("type".to_string(), json!("output_text"));
-                        }
+                        && let Some(first_obj) = first_item.as_object_mut()
+                    {
+                        first_obj.insert("type".to_string(), json!("output_text"));
+                    }
                 }
 
                 // 添加 message 字段
@@ -412,7 +412,8 @@ mod tests {
     #[test]
     fn test_fix_malformed_function_call_outputs() {
         // 构造一个包含异常 function_call_output 的请求
-        let mut request = json!({
+        let mut request: Value = serde_json::from_str(r#"
+{
             "model": "test-model",
             "max_output_tokens": 4096,
             "stream": false,
@@ -425,7 +426,7 @@ mod tests {
                 {
                     "call_id": "call_dfff71beedfc4e05a1ca7100",
                     "output": "[{\"text\":\"我这边先说明下：当前环境里终端命令调用被拒绝了，所以我暂时无法直接扫描你的本地仓库文件。\\n\\n你可以任选一种方式，我立刻继续做精确定位：\\n\\n- 方式 1（推荐）：把仓库根目录路径下的关键文件列表/目录结构贴给我（例如 `src/`, `app/`, `components/` 相关）\\n- 方式 2：直接把你怀疑相关的文件内容贴上来（比如包含“注释/annotation/comment/page/layout/number/index”的文件）\\n- 方式 3：你本地先跑以下命令，把结果发我（我会据此给出“所有相关文件 + 关键代码段 + 结论”）：\\n\\n```bash\\n# 1) 找候选文件\\nrg -n \\\"annotation|annot|comment|note|footnote|序号|编号|页|分页|layout|position|left|bottom|vertical|horizontal|direction\\\" src app components\\n\\n# 2) 如果是 React Native/前端项目，再补充样式方向相关\\nrg -n \\\"flexDirection|writingMode|position:\\\\\\\\s*'absolute'|left:\\\\\\\\s*|bottom:\\\\\\\\s*|transform|column|row\\\" src app components\\n```\\n\\n拿到这些结果后，我会按你关心的三点给出明确结论：\\n- 注释序号如何编号\\n- 分页是否重置编号\\n- 左下角注释是横排还是竖排（以及由哪段布局代码决定）\",\"type\":\"text\"},{\"text\":\"agentId: a883913cc85bbedd1 (for resuming to continue this agent's work if needed)\\n<usage>total_tokens: 11154\\ntool_uses: 1\\nduration_ms: 36320</usage>\",\"type\":\"text\"}]",
-            "type": "function_call_output"
+                   "type": "function_call_output"
                 },
                 {
                     "call_id": "call_normal456",
@@ -433,7 +434,8 @@ mod tests {
                     "type": "function_call_output"
                 }
             ]
-        });
+        }
+        "#).unwrap();
 
         // 调用修复函数
         fix_malformed_function_call_outputs(&mut request);
