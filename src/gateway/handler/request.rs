@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Result, bail};
 use bytes::Bytes;
@@ -98,4 +98,59 @@ pub fn req_local_intercept(
         return true;
     }
     false
+}
+
+pub fn make_proxy_url<'a>(
+    endpoint: &'a str,
+    oai_api: bool,
+    req: &Request,
+) -> (String, Cow<'a, str>) {
+    // 解析 endpoint
+    let host_str = endpoint
+        .strip_prefix("https://")
+        .or_else(|| endpoint.strip_prefix("http://"))
+        .unwrap_or(endpoint);
+
+    let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
+
+    // 构建上游 URL
+    let original_path = req.uri().path();
+    let query = req.uri().query().unwrap_or("");
+    let query_str = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{query}")
+    };
+
+    let new_path = if base_path.is_empty() {
+        format!("{original_path}{query_str}")
+    } else {
+        format!(
+            "/{}/{}{}",
+            base_path,
+            original_path.trim_start_matches('/'),
+            query_str
+        )
+    };
+
+    let scheme = if endpoint.starts_with("https://") {
+        "https"
+    } else {
+        "http"
+    };
+
+    let mut upstream_url = format!("{host}{new_path}");
+    upstream_url = upstream_url.replace("?beta=true", "");
+
+    // 只有当 oai_api=true 时才将 messages 替换为 responses
+    if oai_api {
+        upstream_url = upstream_url.replace("messages", "responses");
+    }
+    upstream_url = upstream_url.replace("claude/", "");
+    while upstream_url.contains("//") {
+        upstream_url = upstream_url.replace("//", "/");
+    }
+    upstream_url = format!("{scheme}://{upstream_url}");
+    tracing::info!("Proxying to: {}", upstream_url);
+    (upstream_url, Cow::Borrowed(host))
 }

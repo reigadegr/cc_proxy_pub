@@ -6,6 +6,7 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
+
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
@@ -13,7 +14,7 @@ use salvo::{http::ResBody, prelude::*};
 
 use crate::gateway::{
     handler::{
-        request::{filter_req_body, override_model_in_body, req_local_intercept},
+        request::{filter_req_body, make_proxy_url, override_model_in_body, req_local_intercept},
         response::decompress_gzip_if_needed,
         thinking_patch::patch_reasoning_for_thinking_mode,
         utils::setup_handler_state,
@@ -130,53 +131,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         calculate_tokens(stats.as_ref(), body_str);
     }
 
-    // 解析 endpoint
-    let host_str = endpoint
-        .strip_prefix("https://")
-        .or_else(|| endpoint.strip_prefix("http://"))
-        .unwrap_or(&endpoint);
-
-    let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
-
-    // 构建上游 URL
-    let original_path = req.uri().path();
-    let query = req.uri().query().unwrap_or("");
-    let query_str = if query.is_empty() {
-        String::new()
-    } else {
-        format!("?{query}")
-    };
-
-    let new_path = if base_path.is_empty() {
-        format!("{original_path}{query_str}")
-    } else {
-        format!(
-            "/{}/{}{}",
-            base_path,
-            original_path.trim_start_matches('/'),
-            query_str
-        )
-    };
-
-    let scheme = if endpoint.starts_with("https://") {
-        "https"
-    } else {
-        "http"
-    };
-
-    let mut upstream_url = format!("{host}{new_path}");
-    upstream_url = upstream_url.replace("?beta=true", "");
-
-    // 只有当 oai_api=true 时才将 messages 替换为 responses
-    if oai_api {
-        upstream_url = upstream_url.replace("messages", "responses");
-    }
-    upstream_url = upstream_url.replace("claude/", "");
-    while upstream_url.contains("//") {
-        upstream_url = upstream_url.replace("//", "/");
-    }
-    upstream_url = format!("{scheme}://{upstream_url}");
-    tracing::info!("Proxying to: {}", upstream_url);
+    let (upstream_url, host) = make_proxy_url(&endpoint, oai_api, req);
 
     // 构建代理请求
     let mut proxy_req_builder = HyperRequest::builder()
@@ -193,7 +148,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
 
     // 注入 Authorization
     proxy_req_builder = proxy_req_builder.header("Authorization", format!("Bearer {api_key}"));
-    proxy_req_builder = proxy_req_builder.header("host", host);
+    proxy_req_builder = proxy_req_builder.header("host", host.as_ref());
 
     // Content-Length 由 hyper 自动设置，无需手动设置
 
