@@ -1,17 +1,22 @@
+use std::{io::Read, sync::Arc};
+
+use bytes::Bytes;
+use flate2::read::GzDecoder;
+use futures_util::StreamExt;
+use http_body_util::{BodyExt, BodyStream, Full};
+use hyper::{
+    Request as HyperRequest, Response as HyperResponse,
+    body::Incoming,
+    header::{HeaderName, HeaderValue},
+};
+use salvo::{http::ResBody, prelude::*};
+
 use super::{
     HttpClient, RequestStats, openai_compat,
     optimization::try_local_optimization,
     service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
 };
 use crate::config::AtomicConfig;
-use bytes::Bytes;
-use flate2::read::GzDecoder;
-use futures_util::StreamExt;
-use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::header::{HeaderName, HeaderValue};
-use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
-use salvo::{http::ResBody, prelude::*};
-use std::{io::Read, sync::Arc};
 
 /// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
 const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[

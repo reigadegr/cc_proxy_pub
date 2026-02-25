@@ -3,12 +3,15 @@ pub mod openai_compat;
 pub mod optimization;
 pub mod service;
 
+use std::sync::{Arc, atomic::AtomicU64};
+
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::client::legacy::{Client, connect::HttpConnector};
-use hyper_util::rt::TokioExecutor;
-use std::{sync::Arc, sync::atomic::AtomicU64};
+use hyper_util::{
+    client::legacy::{Client, connect::HttpConnector},
+    rt::TokioExecutor,
+};
 
 /// Token 统计
 pub struct RequestStats {

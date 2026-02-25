@@ -1,9 +1,11 @@
-use crate::gateway::RequestStats;
+use std::{borrow::Cow, sync::atomic::Ordering};
+
 use http::HeaderMap;
 use rayon::prelude::*;
 use serde_json::Value;
-use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::{info, warn};
+
+use crate::gateway::RequestStats;
 
 fn estimate_tokens(text: &str) -> u64 {
     // 整数运算避免浮点精度损失: (len * 2 + 6) / 7 ≈ len / 3.5
