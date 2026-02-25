@@ -209,7 +209,7 @@ pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
 }
 
 /// 打印全部请求头
-pub fn log_request_headers(method: &str, uri: &str, headers: &HeaderMap) {
+pub fn log_request_info(method: &str, uri: &str, headers: &HeaderMap) {
     info!("=== 请求头 ===");
     info!("Method: {}", method);
     info!("URI: {}", uri);
