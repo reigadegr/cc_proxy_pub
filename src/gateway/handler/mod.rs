@@ -1,3 +1,8 @@
+mod content_tag;
+mod system_prompt;
+mod thinking_patch;
+mod tool_desc;
+
 use std::{io::Read, sync::Arc};
 
 use bytes::Bytes;
@@ -11,123 +16,20 @@ use hyper::{
 };
 use salvo::{http::ResBody, prelude::*};
 
-use super::{
-    HttpClient, RequestStats, openai_compat,
-    optimization::try_local_optimization,
-    service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
+use crate::{
+    config::AtomicConfig,
+    gateway::{
+        HttpClient, RequestStats,
+        handler::{
+            content_tag::filter_messages_content, system_prompt::filter_system_prompts,
+            thinking_patch::patch_reasoning_for_thinking_mode,
+            tool_desc::filter_tools_by_description,
+        },
+        openai_compat,
+        optimization::try_local_optimization,
+        service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
+    },
 };
-use crate::config::AtomicConfig;
-
-/// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
-const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
-    // Claude CLI 的主要提示词
-    "You are an interactive CLI tool that helps users with soft",
-    // Claude Code 身份标识
-    "You are Claude Code",
-    // Claude Code 查找文件标识
-    "You are a file search specialist for Claude Code",
-    // Claude Code 无意义版本信息
-    "x-anthropic-billing-header: cc_version=",
-];
-
-/// 需要从 messages[].content[] 中移除的标签（成对匹配）
-const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
-    ("<system-reminder>", "</system-reminder>"),
-    ("<local-command-stdout>", "</local-command-stdout>"),
-    ("<command-name>", "</command-name>"),
-    ("<local-command-caveat>", "</local-command-caveat>"),
-    ("<command-name>", "</command-args>"),
-];
-
-/// 需要从 tools[].description 中过滤的关键词
-const TOOLS_DESCRIPTION_FILTER_KEYWORDS: &[&str] = &[
-    "A powerful search tool built on ripgrep",
-    "Allows Claude to search the web",
-    "WebFetch WILL FAIL for authenticated or private URLs.",
-    "List all available sources (websites) in the Actionbook database.",
-    "Search for sources (websites) by keyword.",
-    "Search for website action manuals by keyword.",
-    "Get complete action details by area_id, including DOM selectors and element information.",
-    "Get complete action details by action ID, including DOM selectors and step-by-step instructions.",
-];
-
-/// 缺省的 `reasoning_content` 占位符
-const REASONING_PLACEHOLDER: &str = "[Previous reasoning not available in context]";
-
-/// 检查文本是否应该从 content 中移除
-fn should_remove_content(text: &str) -> bool {
-    let trimmed = text.trim();
-    for (start, end) in CONTENT_TAG_FILTERS {
-        if trimmed.starts_with(start) && trimmed.ends_with(end) {
-            return true;
-        }
-    }
-    false
-}
-
-/// 检查 tool.description 是否包含需要过滤的关键词
-fn should_remove_tool_by_description(description: &str) -> bool {
-    TOOLS_DESCRIPTION_FILTER_KEYWORDS
-        .iter()
-        .any(|keyword| description.contains(keyword))
-}
-
-/// 从 message.content 中提取 type=thinking 的 thinking 文本
-fn extract_thinking_text(message: &serde_json::Value) -> Option<&str> {
-    message
-        .get("content")
-        .and_then(|c| c.as_array())
-        .and_then(|content| {
-            content
-                .iter()
-                .find(|block| block.get("type").and_then(|t| t.as_str()) == Some("thinking"))
-        })
-        .and_then(|block| block.get("thinking").and_then(|t| t.as_str()))
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-}
-
-/// 判断 `reasoning_content` 是否缺失或仍为占位符
-fn reasoning_missing_or_placeholder(message: &serde_json::Value) -> bool {
-    message
-        .get("reasoning_content")
-        .and_then(|v| v.as_str())
-        .is_none_or(|value| value == REASONING_PLACEHOLDER)
-}
-
-/// 根据 thinking 文本补丁单条消息的 `reasoning_content`
-fn patch_message_reasoning_content(
-    message: &mut serde_json::Value,
-    fallback_thinking: Option<&str>,
-) -> bool {
-    if !reasoning_missing_or_placeholder(message) {
-        return false;
-    }
-
-    let reasoning_value = extract_thinking_text(message)
-        .or(fallback_thinking)
-        .unwrap_or(REASONING_PLACEHOLDER)
-        .to_string();
-
-    let Some(object) = message.as_object_mut() else {
-        return false;
-    };
-
-    let should_update = object
-        .get("reasoning_content")
-        .and_then(|v| v.as_str())
-        .is_none_or(|current| current != reasoning_value);
-
-    if should_update {
-        object.insert(
-            "reasoning_content".to_string(),
-            serde_json::json!(reasoning_value),
-        );
-        return true;
-    }
-
-    false
-}
 
 /// 尝试解压 gzip 编码的响应体
 ///
@@ -158,169 +60,6 @@ fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>)
             body_bytes.clone()
         }
     }
-}
-
-/// 过滤请求体中的 system 数组，移除包含特定文本的元素
-///
-/// Claude CLI 发送的请求中，system 数组包含很长的提示词文本，
-/// 这些文本会占用大量 tokens。此函数移除包含任意标记文本的元素。
-fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
-
-    // 获取 system 数组
-    let system = json.get_mut("system")?.as_array_mut()?;
-
-    let original_len = system.len();
-
-    // 过滤掉包含任意标记文本的元素
-    system.retain(|item| {
-        item.get("text")
-            .and_then(|t| t.as_str())
-            .is_none_or(|text| {
-                !SYSTEM_PROMPT_FILTER_MARKERS
-                    .iter()
-                    .any(|marker| text.contains(marker))
-            })
-    });
-
-    // 如果有元素被移除，记录日志
-    if system.len() < original_len {
-        tracing::info!(
-            "🧹 已过滤 system 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
-            original_len,
-            system.len(),
-            original_len - system.len()
-        );
-    }
-
-    serde_json::to_vec(&json).ok().map(Into::into)
-}
-
-/// 为 Kimi Thinking 模式补全缺失的 `reasoning_content`
-///
-/// 在 thinking 启用时：
-/// - 优先从 message.content[type=thinking].thinking 提取文本
-/// - 给 `assistant` 消息补上/替换 `reasoning_content`（缺失或为占位符时）
-/// - 给 `messages` 最后一个元素补上/替换 `reasoning_content`（缺失或为占位符时），不区分 role
-fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
-
-    // 检查是否启用了 thinking 模式
-    let thinking_enabled = json
-        .get("thinking")
-        .and_then(|t| t.get("type"))
-        .and_then(|t| t.as_str())
-        == Some("enabled");
-
-    if !thinking_enabled {
-        return None;
-    }
-
-    let messages = json.get_mut("messages")?.as_array_mut()?;
-    let mut patched = false;
-
-    // 用于兜底：取最后一个可用的 thinking 文本
-    let latest_thinking = messages
-        .iter()
-        .rev()
-        .find_map(extract_thinking_text)
-        .map(str::to_string);
-
-    for message in messages.iter_mut() {
-        let is_assistant = message.get("role").and_then(|r| r.as_str()) == Some("assistant");
-
-        if !is_assistant {
-            continue;
-        }
-
-        if patch_message_reasoning_content(message, latest_thinking.as_deref()) {
-            patched = true;
-        }
-    }
-
-    if patched {
-        tracing::debug!("Patched missing reasoning_content for thinking mode messages");
-        serde_json::to_vec(&json).ok().map(Into::into)
-    } else {
-        None
-    }
-}
-
-/// 过滤 tools 数组中 description 命中关键词的元素
-fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
-
-    let tools = json.get_mut("tools")?.as_array_mut()?;
-    let original_len = tools.len();
-
-    tools.retain(|tool| {
-        tool.get("description")
-            .and_then(|d| d.as_str())
-            .is_none_or(|description| !should_remove_tool_by_description(description))
-    });
-
-    if tools.len() < original_len {
-        tracing::info!(
-            "🧹 已过滤 tools 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
-            original_len,
-            tools.len(),
-            original_len - tools.len()
-        );
-    }
-
-    serde_json::to_vec(&json).ok().map(Into::into)
-}
-
-/// 过滤 messages[].content[] 数组，移除无用标签内容
-///
-/// Claude CLI 发送的请求中，content 数组可能包含大量无用的标签内容：
-/// - <system-reminder>...</system-reminder>
-/// - <local-command-stdout>...</local-command-stdout>
-/// - <command-name>...</command-name>
-/// - <local-command-caveat>...</local-command-caveat>
-///
-/// 这些内容占用大量 tokens 但对模型无用，此函数将其移除。
-fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
-
-    let messages = json.get_mut("messages")?.as_array_mut()?;
-
-    let mut total_removed = 0usize;
-    let mut total_chars = 0usize;
-
-    for message in messages.iter_mut() {
-        let Some(content) = message.get_mut("content").and_then(|c| c.as_array_mut()) else {
-            continue;
-        };
-
-        // 统计移除前的信息
-        for item in content.iter() {
-            if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                && should_remove_content(text)
-            {
-                total_removed += 1;
-                total_chars += text.len();
-            }
-        }
-
-        // 过滤掉需要移除的内容
-        content.retain(|item| {
-            item.get("text")
-                .and_then(|t| t.as_str())
-                .is_none_or(|text| !should_remove_content(text))
-        });
-    }
-
-    if total_removed > 0 {
-        tracing::info!(
-            "🧹 已过滤 messages.content: 移除 {} 项, 节省约 {} 字符 (~{} tokens)",
-            total_removed,
-            total_chars,
-            total_chars / 4
-        );
-    }
-
-    serde_json::to_vec(&json).ok().map(Into::into)
 }
 
 /// 尝试覆盖请求体中的 model 字段
