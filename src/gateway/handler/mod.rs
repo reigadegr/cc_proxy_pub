@@ -5,9 +5,8 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
-use anyhow::{Result, bail};
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
@@ -19,15 +18,21 @@ use hyper::{
 };
 use salvo::{http::ResBody, prelude::*};
 
-use crate::gateway::{
-    handler::{
-        content_tag::filter_messages_content, request::override_model_in_body,
-        system_prompt::filter_system_prompts, thinking_patch::patch_reasoning_for_thinking_mode,
-        tool_desc::filter_tools_by_description, utils::setup_handler_state,
+use crate::{
+    AtomicConfig,
+    gateway::{
+        handler::{
+            content_tag::filter_messages_content,
+            request::{filter_req_body, override_model_in_body},
+            system_prompt::filter_system_prompts,
+            thinking_patch::patch_reasoning_for_thinking_mode,
+            tool_desc::filter_tools_by_description,
+            utils::setup_handler_state,
+        },
+        openai_compat,
+        optimization::try_local_optimization,
+        service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
     },
-    openai_compat,
-    optimization::try_local_optimization,
-    service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
 };
 
 /// 尝试解压 gzip 编码的响应体
@@ -61,36 +66,38 @@ fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>)
     }
 }
 
-async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
-    // 收集请求体
-    let mut body_bytes = match BodyExt::collect(req.body_mut()).await {
-        Ok(body) => body.to_bytes(),
-        Err(e) => {
-            bail!("Failed to collect request body: {e}");
+pub fn req_local_intercept(
+    req: &Request,
+    res: &mut Response,
+    body_bytes: &Bytes,
+    config: &Arc<AtomicConfig>,
+) -> bool {
+    if let Some(local_response) = try_local_optimization(
+        body_bytes,
+        req.uri().to_string().as_str(),
+        &config.get().optimizations,
+    ) {
+        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
+
+        res.status_code(StatusCode::OK);
+        res.headers_mut().insert(
+            HeaderName::from_static("content-type"),
+            HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
+            res.headers_mut()
+                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
         }
-    };
 
-    // 过滤 system 数组中占用大量 tokens 的提示词
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_system_prompts(&body_bytes)
-    {
-        body_bytes = filtered;
-    }
+        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
+            log_full_response(body_str);
+        }
 
-    // 过滤 messages.content 中占用大量 tokens 的无用标签
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_messages_content(&body_bytes)
-    {
-        body_bytes = filtered;
+        res.body(local_response.body);
+        return true;
     }
-
-    // 过滤 tools.description 命中关键词的工具定义
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_tools_by_description(&body_bytes)
-    {
-        body_bytes = filtered;
-    }
-    Ok(body_bytes)
+    false
 }
 
 /// 代理请求 handler
@@ -121,31 +128,8 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         }
     };
 
-    let cfg = config.get();
     // 优先检查本地优化（不需要选择 upstream/key）
-    if let Some(local_response) = try_local_optimization(
-        &body_bytes,
-        req.uri().to_string().as_str(),
-        &cfg.optimizations,
-    ) {
-        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
-
-        res.status_code(StatusCode::OK);
-        res.headers_mut().insert(
-            HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/json"),
-        );
-
-        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
-            res.headers_mut()
-                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
-        }
-
-        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
-            log_full_response(body_str);
-        }
-
-        res.body(local_response.body);
+    if req_local_intercept(req, res, &body_bytes, config) {
         return;
     }
 
