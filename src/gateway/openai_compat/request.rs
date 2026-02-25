@@ -11,11 +11,11 @@
 
 use std::borrow::Cow;
 
-use super::media;
-use super::tools;
 use bytes::Bytes;
 use rayon::prelude::*;
 use serde_json::{Map, Value, json};
+
+use super::{media, tools};
 
 /// Anthropic Claude 请求 → `OpenAI` Responses 请求
 pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
@@ -405,8 +405,9 @@ fn extract_text_value(value: &Value) -> Option<Cow<'_, str>> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     /// 测试修复异常的 `function_call_output`
     #[test]

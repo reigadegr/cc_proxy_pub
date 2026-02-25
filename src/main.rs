@@ -2,14 +2,12 @@ mod config;
 mod gateway;
 mod upstream_selector;
 
+use std::{fmt, io::IsTerminal, sync::Arc};
+
 use chrono::Local;
 use config::AtomicConfig;
 use gateway::{GatewayHandler, handler::proxy_handler};
-use salvo::affix_state;
-use salvo::prelude::*;
-use std::fmt;
-use std::io::IsTerminal;
-use std::sync::Arc;
+use salvo::{affix_state, prelude::*};
 use tracing::info;
 use tracing_subscriber::{
     EnvFilter,

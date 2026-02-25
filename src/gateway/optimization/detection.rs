@@ -1,5 +1,6 @@
-use serde_json::Value;
 use std::borrow::Cow;
+
+use serde_json::Value;
 
 const HISTORY_ANALYSIS_PARSE: &str = "You are an expert at analyzing git history.";
 const TITLE_GENERATION_PHRASE: &str = "Analyze if this message indicates a new conversation topic.";
@@ -175,8 +176,9 @@ fn extract_text_from_content(content: &Value) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_quota_check_request() {

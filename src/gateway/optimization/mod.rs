@@ -2,10 +2,10 @@ mod command_utils;
 mod detection;
 mod response_builder;
 
-use crate::config::OptimizationConfig;
+pub use response_builder::OptimizationResponse;
 use serde_json::Value;
 
-pub use response_builder::OptimizationResponse;
+use crate::config::OptimizationConfig;
 
 pub fn try_local_optimization(
     body_bytes: &[u8],
@@ -105,9 +105,10 @@ pub fn try_local_optimization(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use super::try_local_optimization;
     use crate::config::OptimizationConfig;
-    use serde_json::{Value, json};
 
     fn to_json_bytes(value: &Value) -> Vec<u8> {
         serde_json::to_vec(value).unwrap_or_default()

@@ -1,8 +1,9 @@
-use serde_json::{Value, json};
 use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use serde_json::{Value, json};
 
 static RESPONSE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 

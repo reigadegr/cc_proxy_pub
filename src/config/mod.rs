@@ -1,14 +1,23 @@
 pub mod format;
 
-use crate::upstream_selector::UpstreamSelector;
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process,
+    sync::Arc,
+    time::Duration,
+};
+
 use arc_swap::{ArcSwap, Guard};
 use format::format_toml;
-use notify::event::{AccessKind, AccessMode};
-use notify::{EventKind, RecursiveMode, Watcher};
+use notify::{
+    EventKind, RecursiveMode, Watcher,
+    event::{AccessKind, AccessMode},
+};
 use serde::{Deserialize, Serialize};
-use std::process;
-use std::{env, fs, path::Path, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{error, info, warn};
+
+use crate::upstream_selector::UpstreamSelector;
 
 /// 全局原子配置，支持热重载
 pub struct AtomicConfig {

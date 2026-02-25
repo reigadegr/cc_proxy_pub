@@ -5,8 +5,9 @@
 //! 2. 内层：在每个 upstream 内部遍历其 `api_keys`
 //!    即：upstream[0].key[0] -> upstream[0].key[1] -> ... -> upstream[1].key[0] -> ...
 
-use crate::config::UpstreamConfig;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::config::UpstreamConfig;
 
 /// Upstream 选择器，使用双层 round-robin 策略
 pub struct UpstreamSelector {
