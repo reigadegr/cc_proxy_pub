@@ -1,9 +1,11 @@
 mod content_tag;
+mod request;
 mod system_prompt;
 mod thinking_patch;
 mod tool_desc;
+mod utils;
 
-use std::{io::Read, sync::Arc};
+use std::io::Read;
 
 use anyhow::{Result, bail};
 use bytes::Bytes;
@@ -16,21 +18,16 @@ use hyper::{
     header::{HeaderName, HeaderValue},
 };
 use salvo::{http::ResBody, prelude::*};
-use serde_json::{Value, from_slice, json, to_vec};
 
-use crate::{
-    config::AtomicConfig,
-    gateway::{
-        HttpClient, RequestStats,
-        handler::{
-            content_tag::filter_messages_content, system_prompt::filter_system_prompts,
-            thinking_patch::patch_reasoning_for_thinking_mode,
-            tool_desc::filter_tools_by_description,
-        },
-        openai_compat,
-        optimization::try_local_optimization,
-        service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
+use crate::gateway::{
+    handler::{
+        content_tag::filter_messages_content, request::override_model_in_body,
+        system_prompt::filter_system_prompts, thinking_patch::patch_reasoning_for_thinking_mode,
+        tool_desc::filter_tools_by_description, utils::setup_handler_state,
     },
+    openai_compat,
+    optimization::try_local_optimization,
+    service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
 };
 
 /// 尝试解压 gzip 编码的响应体
@@ -64,63 +61,12 @@ fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>)
     }
 }
 
-/// 尝试覆盖请求体中的 model 字段
-fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes> {
-    let json = from_slice::<Value>(body_bytes).ok()?;
-    let original_model = json.get("model").and_then(|m| m.as_str());
-
-    if let Some(original) = original_model {
-        tracing::info!("原始 model: {} -> 覆盖为: {}", original, model);
-    }
-
-    let mut modified = json;
-    modified["model"] = json!(model);
-
-    to_vec(&modified).ok().map(Into::into)
-}
-
-fn setup_handler_state(
-    depot: &Depot,
-) -> Result<(&Arc<AtomicConfig>, &Arc<RequestStats>, &Arc<HttpClient>)> {
-    // 获取配置、统计和 HTTP 客户端
-    let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
-        bail!("AtomicConfig not found in depot");
-    };
-    let Ok(stats) = depot.obtain::<Arc<RequestStats>>() else {
-        bail!("RequestStats not found in depot");
-    };
-    let Ok(client) = depot.obtain::<Arc<HttpClient>>() else {
-        bail!("HttpClient not found in depot");
-    };
-    Ok((config, stats, client))
-}
-
-/// 代理请求 handler
-#[handler]
-pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let (config, stats, client) = match setup_handler_state(depot) {
-        Ok(v) => v,
-        Err(e) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            tracing::error!("Failed to get dependencies from depot: {e}");
-            return;
-        }
-    };
-
-    // 记录请求头
-    log_request_info(
-        req.method().as_str(),
-        req.uri().to_string().as_str(),
-        req.headers(),
-    );
-
+async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体
     let mut body_bytes = match BodyExt::collect(req.body_mut()).await {
         Ok(body) => body.to_bytes(),
         Err(e) => {
-            tracing::error!("Failed to collect request body: {}", e);
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            return;
+            bail!("Failed to collect request body: {e}");
         }
     };
 
@@ -144,6 +90,36 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     {
         body_bytes = filtered;
     }
+    Ok(body_bytes)
+}
+
+/// 代理请求 handler
+#[handler]
+pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let (config, stats, client) = match setup_handler_state(depot) {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            tracing::error!("Failed to get dependencies from depot: {e}");
+            return;
+        }
+    };
+
+    // 记录请求头
+    log_request_info(
+        req.method().as_str(),
+        req.uri().to_string().as_str(),
+        req.headers(),
+    );
+
+    let body_bytes = match filter_req_body(req).await {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            tracing::error!("{e}");
+            return;
+        }
+    };
 
     let cfg = config.get();
     // 优先检查本地优化（不需要选择 upstream/key）
