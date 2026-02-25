@@ -1,104 +1,26 @@
 mod content_tag;
 mod request;
+mod response;
 mod system_prompt;
 mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-use std::{io::Read, sync::Arc};
-
-use bytes::Bytes;
-use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::{
-    Request as HyperRequest, Response as HyperResponse,
-    body::Incoming,
-    header::{HeaderName, HeaderValue},
-};
+use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::{http::ResBody, prelude::*};
 
-use crate::{
-    AtomicConfig,
-    gateway::{
-        handler::{
-            content_tag::filter_messages_content,
-            request::{filter_req_body, override_model_in_body},
-            system_prompt::filter_system_prompts,
-            thinking_patch::patch_reasoning_for_thinking_mode,
-            tool_desc::filter_tools_by_description,
-            utils::setup_handler_state,
-        },
-        openai_compat,
-        optimization::try_local_optimization,
-        service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
+use crate::gateway::{
+    handler::{
+        request::{filter_req_body, override_model_in_body, req_local_intercept},
+        response::decompress_gzip_if_needed,
+        thinking_patch::patch_reasoning_for_thinking_mode,
+        utils::setup_handler_state,
     },
+    openai_compat,
+    service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
 };
-
-/// 尝试解压 gzip 编码的响应体
-///
-/// 检查 content-encoding 头部，如果是 gzip 则自动解压。
-/// 返回解压后的字节和是否进行了解压的标志。
-fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>) -> Bytes {
-    // 检查是否为 gzip 编码
-    let is_gzip = content_encoding.is_some_and(|enc| enc.to_lowercase().contains("gzip"));
-
-    if !is_gzip {
-        return body_bytes.clone();
-    }
-
-    // 尝试解压 gzip 数据
-    let mut decoder = GzDecoder::new(&body_bytes[..]);
-    let mut decompressed = Vec::new();
-    match decoder.read_to_end(&mut decompressed) {
-        Ok(_) => {
-            tracing::debug!(
-                "📦 gzip 解压成功: {} bytes → {} bytes",
-                body_bytes.len(),
-                decompressed.len()
-            );
-            decompressed.into()
-        }
-        Err(e) => {
-            tracing::warn!("gzip 解压失败: {}，使用原始响应体", e);
-            body_bytes.clone()
-        }
-    }
-}
-
-pub fn req_local_intercept(
-    req: &Request,
-    res: &mut Response,
-    body_bytes: &Bytes,
-    config: &Arc<AtomicConfig>,
-) -> bool {
-    if let Some(local_response) = try_local_optimization(
-        body_bytes,
-        req.uri().to_string().as_str(),
-        &config.get().optimizations,
-    ) {
-        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
-
-        res.status_code(StatusCode::OK);
-        res.headers_mut().insert(
-            HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/json"),
-        );
-
-        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
-            res.headers_mut()
-                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
-        }
-
-        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
-            log_full_response(body_str);
-        }
-
-        res.body(local_response.body);
-        return true;
-    }
-    false
-}
 
 /// 代理请求 handler
 #[handler]
