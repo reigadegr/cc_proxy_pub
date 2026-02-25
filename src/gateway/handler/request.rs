@@ -1,11 +1,22 @@
+use std::sync::Arc;
+
 use anyhow::{Result, bail};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use hyper::header::{HeaderName, HeaderValue};
 use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 
-use crate::gateway::handler::{
-    filter_messages_content, filter_system_prompts, filter_tools_by_description,
+use crate::{
+    AtomicConfig,
+    gateway::{
+        handler::{
+            content_tag::filter_messages_content, system_prompt::filter_system_prompts,
+            tool_desc::filter_tools_by_description,
+        },
+        optimization::try_local_optimization,
+        service::log_full_response,
+    },
 };
 
 /// 尝试覆盖请求体中的 model 字段
@@ -53,4 +64,38 @@ pub async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
         body_bytes = filtered;
     }
     Ok(body_bytes)
+}
+
+pub fn req_local_intercept(
+    req: &Request,
+    res: &mut Response,
+    body_bytes: &Bytes,
+    config: &Arc<AtomicConfig>,
+) -> bool {
+    if let Some(local_response) = try_local_optimization(
+        body_bytes,
+        req.uri().to_string().as_str(),
+        &config.get().optimizations,
+    ) {
+        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
+
+        res.status_code(StatusCode::OK);
+        res.headers_mut().insert(
+            HeaderName::from_static("content-type"),
+            HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(value) = HeaderValue::from_str(local_response.reason) {
+            res.headers_mut()
+                .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
+        }
+
+        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
+            log_full_response(body_str);
+        }
+
+        res.body(local_response.body);
+        return true;
+    }
+    false
 }
