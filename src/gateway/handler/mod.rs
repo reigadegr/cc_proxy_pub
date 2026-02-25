@@ -5,6 +5,7 @@ mod tool_desc;
 
 use std::{io::Read, sync::Arc};
 
+use anyhow::{Result, bail};
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
@@ -15,6 +16,7 @@ use hyper::{
     header::{HeaderName, HeaderValue},
 };
 use salvo::{http::ResBody, prelude::*};
+use serde_json::{Value, from_slice, json, to_vec};
 
 use crate::{
     config::AtomicConfig,
@@ -27,7 +29,7 @@ use crate::{
         },
         openai_compat,
         optimization::try_local_optimization,
-        service::{calculate_tokens, log_full_body, log_full_response, log_request_headers},
+        service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
     },
 };
 
@@ -64,7 +66,7 @@ fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>)
 
 /// 尝试覆盖请求体中的 model 字段
 fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes> {
-    let json = serde_json::from_slice::<serde_json::Value>(body_bytes).ok()?;
+    let json = from_slice::<Value>(body_bytes).ok()?;
     let original_model = json.get("model").and_then(|m| m.as_str());
 
     if let Some(original) = original_model {
@@ -72,34 +74,41 @@ fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes
     }
 
     let mut modified = json;
-    modified["model"] = serde_json::json!(model);
+    modified["model"] = json!(model);
 
-    serde_json::to_vec(&modified).ok().map(Into::into)
+    to_vec(&modified).ok().map(Into::into)
+}
+
+fn setup_handler_state(
+    depot: &Depot,
+) -> Result<(&Arc<AtomicConfig>, &Arc<RequestStats>, &Arc<HttpClient>)> {
+    // 获取配置、统计和 HTTP 客户端
+    let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
+        bail!("AtomicConfig not found in depot");
+    };
+    let Ok(stats) = depot.obtain::<Arc<RequestStats>>() else {
+        bail!("RequestStats not found in depot");
+    };
+    let Ok(client) = depot.obtain::<Arc<HttpClient>>() else {
+        bail!("HttpClient not found in depot");
+    };
+    Ok((config, stats, client))
 }
 
 /// 代理请求 handler
 #[handler]
 pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    // 获取配置、统计和 HTTP 客户端
-    let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
-        tracing::error!("AtomicConfig not found in depot");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        return;
+    let (config, stats, client) = match setup_handler_state(depot) {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            tracing::error!("Failed to get dependencies from depot: {e}");
+            return;
+        }
     };
-    let Ok(stats) = depot.obtain::<Arc<RequestStats>>() else {
-        tracing::error!("RequestStats not found in depot");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        return;
-    };
-    let Ok(client) = depot.obtain::<Arc<HttpClient>>() else {
-        tracing::error!("HttpClient not found in depot");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        return;
-    };
-    let cfg = config.get();
 
     // 记录请求头
-    log_request_headers(
+    log_request_info(
         req.method().as_str(),
         req.uri().to_string().as_str(),
         req.headers(),
@@ -136,6 +145,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         body_bytes = filtered;
     }
 
+    let cfg = config.get();
     // 优先检查本地优化（不需要选择 upstream/key）
     if let Some(local_response) = try_local_optimization(
         &body_bytes,
@@ -235,7 +245,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         && let Ok(body_str) = std::str::from_utf8(&body_bytes)
     {
         log_full_body(body_str);
-        calculate_tokens(stats, body_str);
+        calculate_tokens(stats.as_ref(), body_str);
     }
 
     // 解析 endpoint
