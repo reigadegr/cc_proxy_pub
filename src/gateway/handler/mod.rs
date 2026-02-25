@@ -79,7 +79,7 @@ fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes
 
 /// 代理请求 handler
 #[handler]
-pub async fn proxy_handler(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // 获取配置、统计和 HTTP 客户端
     let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
         tracing::error!("AtomicConfig not found in depot");

@@ -1,12 +1,11 @@
 mod config;
 mod gateway;
-mod upstream_selector;
 
 use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
 use config::AtomicConfig;
-use gateway::{GatewayHandler, handler::proxy_handler};
+use gateway::{GatewayHandler, handler::claude_proxy};
 use salvo::{affix_state, prelude::*};
 use tracing::info;
 use tracing_subscriber::{
@@ -64,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
                 .inject(Arc::clone(gateway.stats()))
                 .inject(Arc::clone(gateway.client())),
         )
-        .push(Router::with_path("claude/{**rest}").goal(proxy_handler));
+        .push(Router::with_path("claude/{**rest}").goal(claude_proxy));
 
     // 启动服务器
     let acceptor = TcpListener::new("0.0.0.0:9066").bind().await;
