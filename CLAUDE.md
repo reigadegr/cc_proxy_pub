@@ -34,36 +34,17 @@ sh build_native_stable.sh
 
 # Release 模式（推荐用于生产环境）
 sh build_native_stable.sh r
-
-# 或直接使用 Cargo
-cargo build --release
 ```
+
+> ⚠️ 全程禁止执行 `cargo build`、`cargo build --release` 以及其他任何 `cargo build*` 构建命令。
+> 如需验证或测试，请统一执行 `sh debug.sh`（已包含格式化、clippy 与 `cargo test` 的全套检查）。
 
 ### 运行
-```bash
-# 使用默认配置文件 (config.toml)
-cargo run
-
-# 指定配置文件
-cargo run /path/to/config.toml
-
-# 或使用调试脚本
-sh debug.sh
-```
+通知用户手动运行
 
 ### 开发调试
 ```bash
-# 运行 linter（启用严格的 Clippy 检查）
-cargo clippy
-
-# 格式化代码
-cargo fmt
-
-# 运行所有测试
-cargo test
-
-# 运行单个测试（将 test_name 替换为实际的测试函数名）
-cargo test test_name
+sh debug.sh
 ```
 
 ## 架构概览
@@ -141,11 +122,3 @@ enable_filepath_extraction_mock = true
 - **[arc-swap](https://docs.rs/arc-swap/)** - 无锁原子配置切换
 - **[notify](https://docs.rs/notify/)** - 跨平台文件监听
 - **[mimalloc](https://github.com/microsoft/mimalloc)** - 高性能内存分配器
-
-## 测试
-
-项目使用标准 Rust 测试。运行单个测试：
-
-```bash
-cargo test <test_function_name>
-```
