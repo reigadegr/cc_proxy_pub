@@ -11,18 +11,21 @@ use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::{http::ResBody, prelude::*};
 
-use crate::gateway::{
-    handler::{
-        request::{
-            filter_req_body, log_request_meta, make_proxy_url, override_model_in_body,
-            req_local_intercept,
+use crate::{
+    config::Mode,
+    gateway::{
+        handler::{
+            request::{
+                filter_req_body, log_request_meta, make_proxy_url, override_model_in_body,
+                req_local_intercept,
+            },
+            response::decompress_gzip_if_needed,
+            thinking_patch::patch_reasoning_for_thinking_mode,
+            utils::setup_handler_state,
         },
-        response::decompress_gzip_if_needed,
-        thinking_patch::patch_reasoning_for_thinking_mode,
-        utils::setup_handler_state,
+        openai_compat,
+        service::{calculate_tokens, log_full_body, log_full_response},
     },
-    openai_compat,
-    service::{calculate_tokens, log_full_body, log_full_response},
 };
 
 /// 代理请求 handler
@@ -60,15 +63,15 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     }
 
     // 本地优化未命中，选择 upstream 和 api_key
-    let (upstream_idx, endpoint, selected_model, api_key, oai_api) =
+    let (upstream_idx, endpoint, selected_model, api_key, mode) =
         if let Some(selector) = config.get_upstream_selector() {
-            if let Some((idx, endpoint, model, key, oai_api)) = selector.next() {
+            if let Some((idx, endpoint, model, key, mode)) = selector.next() {
                 (
                     idx,
                     endpoint.to_owned(),
                     model.to_owned(),
                     key.to_owned(),
-                    oai_api,
+                    mode,
                 )
             } else {
                 tracing::error!("No upstream configured");
@@ -83,12 +86,12 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
 
     // 打印选择的 upstream 和 api_key（脱敏显示）
     tracing::info!(
-        "🔄 选中的 Upstream[{}]: endpoint={}, model={}, api_key: {}***, oai_api={}",
+        "🔄 选中的 Upstream[{}]: endpoint={}, model={}, api_key: {}***, mode={:?}",
         upstream_idx,
         endpoint,
         selected_model,
         api_key.chars().take(8).collect::<String>(),
-        oai_api
+        mode
     );
 
     // 使用选中 upstream 的 model 覆盖请求体中的 model 字段
@@ -99,7 +102,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     };
 
     // 如果 oai_api 启用，转换请求体格式：Claude → OpenAI Responses
-    let body_bytes = if oai_api && !body_bytes.is_empty() {
+    let body_bytes = if matches!(mode, Mode::OpenAIResponsesCompat) && !body_bytes.is_empty() {
         match openai_compat::anthropic_request_to_responses(&body_bytes) {
             Ok(converted) => {
                 tracing::debug!(
@@ -137,7 +140,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         calculate_tokens(stats.as_ref(), body_str);
     }
 
-    let (upstream_url, host) = make_proxy_url(&endpoint, oai_api, req);
+    let (upstream_url, host) = make_proxy_url(&endpoint, mode, req);
 
     // 构建代理请求
     let mut proxy_req_builder = HyperRequest::builder()
@@ -236,7 +239,10 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
 
             // 记录原始上游响应（用于调试）
-            if oai_api && !body_bytes.is_empty() && cfg.log_res_body {
+            if matches!(mode, Mode::OpenAIResponsesCompat)
+                && !body_bytes.is_empty()
+                && cfg.log_res_body
+            {
                 let raw_body_str = String::from_utf8_lossy(&body_bytes);
                 tracing::info!("=== 原始上游响应 (转换前) ===");
                 tracing::info!("{}", raw_body_str);
@@ -244,7 +250,9 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             }
 
             // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
-            let body_bytes = if oai_api && !body_bytes.is_empty() {
+            let body_bytes = if matches!(mode, Mode::OpenAIResponsesCompat)
+                && !body_bytes.is_empty()
+            {
                 match openai_compat::responses_response_to_anthropic(
                     &body_bytes,
                     if selected_model.is_empty() {

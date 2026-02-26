@@ -1,17 +1,27 @@
-# example
+# 负载均衡配置示例
 # upstream可以写很多组，api_keys可以写很多个
-# 负载均衡的选择上游，再负载均衡的选key
+# 负载均衡策略：先轮询选择 upstream，再轮询选择 api_key
 # 修改立即生效，如果不生效请反馈
 
-[[upstream]]
-endpoint = "https://open.bigmodel.cn/api/anthropic"
-model = "glm-4.7"
-api_keys = ["your_api_key1", "your_api_key2"]
+# 是否打印请求体
+log_req_body = false
+# 是否打印响应体
+log_res_body = false
 
+# Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
+# mode 默认为 "anthropic"，直接透传 Anthropic 格式
+# 如需使用 OpenAI Responses 格式，设置 mode = "openai"
+
+# Upstream 2: 可配置更多 upstream 实现负载均衡
+# [[upstream]]
+# endpoint = "https://another-provider.com/api/anthropic"
+# model = "claude-3-5-sonnet-20241022"
+# api_keys = ["your_key"]
+# mode = "anthropic"  # 可选: "anthropic" | "openai"
 
 [optimizations]
 enable_network_probe_mock = true
@@ -20,5 +30,3 @@ enable_historical_analysis_mock = true
 enable_title_generation_skip = true
 enable_suggestion_mode_skip = true
 enable_filepath_extraction_mock = true
-log_res_body = false
-log_req_body = false
