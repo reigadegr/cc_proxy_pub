@@ -22,36 +22,42 @@ use crate::{
     },
 };
 
-pub async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
+pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体
-    let mut body_bytes = match BodyExt::collect(req.body_mut()).await {
+    let body_bytes = match BodyExt::collect(req.body_mut()).await {
         Ok(body) => body.to_bytes(),
         Err(e) => {
             bail!("Failed to collect request body: {e}");
         }
     };
+    Ok(body_bytes)
+}
+
+pub async fn filter_req_body(body_bytes: &[u8]) -> Result<Bytes> {
+    let mut current = Bytes::copy_from_slice(body_bytes);
 
     // 过滤 system 数组中占用大量 tokens 的提示词
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_system_prompts(&body_bytes)
+    if !current.is_empty()
+        && let Some(filtered) = filter_system_prompts(&current)
     {
-        body_bytes = filtered;
+        current = filtered;
     }
 
     // 过滤 messages.content 中占用大量 tokens 的无用标签
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_messages_content(&body_bytes)
+    if !current.is_empty()
+        && let Some(filtered) = filter_messages_content(&current)
     {
-        body_bytes = filtered;
+        current = filtered;
     }
 
     // 过滤 tools.description 命中关键词的工具定义
-    if !body_bytes.is_empty()
-        && let Some(filtered) = filter_tools_by_description(&body_bytes)
+    if !current.is_empty()
+        && let Some(filtered) = filter_tools_by_description(&current)
     {
-        body_bytes = filtered;
+        current = filtered;
     }
-    Ok(body_bytes)
+
+    Ok(current)
 }
 
 /// 尝试覆盖请求体中的 model 字段

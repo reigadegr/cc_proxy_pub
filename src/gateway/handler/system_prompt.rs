@@ -35,7 +35,7 @@ When referencing specific functions or pieces of code include the pattern `file_
 /// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
 const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
     // // Claude CLI 的主要提示词
-    "You are an interactive CLI tool that helps users with soft",
+    "IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts.",
     // // Claude Code 身份标识
     "You are Claude Code",
     // // Claude Code 查找文件标识
@@ -84,15 +84,28 @@ pub fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
 ///
 /// 将自定义提示词插入到请求体的 system 数组开头，确保自定义提示优先被模型处理。
 /// 如果请求中没有 system 字段，会创建一个新的 system 数组。
+///
+/// 此函数还会从原始 system 数组中提取 <env>...</env> 标签内的环境信息，
+/// 并追加到自定义提示词的末尾。
 pub fn insert_custom_system_prompt(body_bytes: &[u8], custom_prompt: &str) -> Option<bytes::Bytes> {
     let mut json = from_slice::<Value>(body_bytes).ok()?;
+
+    // 从原始 system 数组中提取环境信息
+    let (env_info, has_env) =
+        extract_env_info(&json).map_or((None, false), |info| (Some(info), true));
+
+    // 如果有环境信息，追加到自定义提示词末尾
+    let final_prompt = env_info.map_or_else(
+        || custom_prompt.to_string(),
+        |info| format!("{custom_prompt}\n\n{info}"),
+    );
 
     // 创建自定义提示词的元素
     let prompt_obj = serde_json::json!({
         "cache_control": {
             "type": "ephemeral"
         },
-        "text": custom_prompt,
+        "text": final_prompt,
         "type": "text"
     });
 
@@ -107,9 +120,37 @@ pub fn insert_custom_system_prompt(body_bytes: &[u8], custom_prompt: &str) -> Op
     system.insert(0, prompt_obj);
 
     tracing::info!(
-        "✅ 已插入自定义系统提示词，当前 system 数组长度: {}",
-        system.len()
+        "✅ 已插入自定义系统提示词，当前 system 数组长度: {}{}",
+        system.len(),
+        if has_env { " (包含环境信息)" } else { "" }
     );
 
     to_vec(&json).ok().map(Into::into)
+}
+
+/// 从 JSON 中的 system 数组提取 <env>...</env> 标签内的环境信息
+///
+/// 遍历 system 数组中每个元素的 text 字段，查找 <env> 标签并提取其内容。
+/// 如果找到多个 <env> 标签，只返回第一个。
+fn extract_env_info(json: &Value) -> Option<String> {
+    let system = json.get("system")?.as_array()?;
+
+    for item in system {
+        if let Some(text) = item.get("text")?.as_str() {
+            // 查找 <env> 标签内容
+            if let Some(start) = text.find("<env>") {
+                let start = start + 5; // 跳过 "<env>"
+                if let Some(end) = text[start..].find("</env>") {
+                    let env_content = &text[start..start + end];
+                    // 构建完整的格式化文本
+                    return Some(format!(
+                        "Here is useful information about the environment you are running in:\n<env>\n{}\n</env>",
+                        env_content.trim()
+                    ));
+                }
+            }
+        }
+    }
+
+    None
 }

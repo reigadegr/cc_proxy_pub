@@ -6,11 +6,7 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-use futures_util::StreamExt;
-use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
-use salvo::{http::ResBody, prelude::*};
-
+use crate::gateway::handler::request::get_req_body;
 use crate::{
     config::Mode,
     gateway::{
@@ -28,6 +24,10 @@ use crate::{
         service::{calculate_tokens, log_full_body, log_full_response},
     },
 };
+use futures_util::StreamExt;
+use http_body_util::{BodyExt, BodyStream, Full};
+use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
+use salvo::{http::ResBody, prelude::*};
 
 /// 代理请求 handler
 #[handler]
@@ -48,7 +48,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         req.headers(),
     );
 
-    let body_bytes = match filter_req_body(req).await {
+    let body_bytes = match get_req_body(req).await {
         Ok(v) => v,
         Err(e) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
@@ -64,11 +64,20 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     }
 
     // 注入自定义系统提示词
-
     let body_bytes = if body_bytes.is_empty() {
         body_bytes
     } else {
         insert_custom_system_prompt(&body_bytes, CUSTOM_SYSTEM_PROMPT).unwrap_or(body_bytes)
+    };
+
+    // 过滤不必要的提示词（必须在注入系统提示词之后执行）
+    let body_bytes = match filter_req_body(&body_bytes).await {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            tracing::error!("{e}");
+            return;
+        }
     };
 
     // 本地优化未命中，选择 upstream 和 api_key
