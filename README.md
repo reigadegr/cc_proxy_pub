@@ -116,27 +116,40 @@ sh build_native_stable.sh r
 编辑 `config.toml`：
 
 ```toml
-# upstream 可以配置多组，api_keys 支持多个 key
-# 负载均衡策略：先选择 upstream，再轮询选择 key
-# 修改配置后立即生效，无需重启
+# 负载均衡配置示例
+# upstream可以写很多组，api_keys可以写很多个
+# 负载均衡策略：先轮询选择 upstream，再轮询选择 api_key
+# 修改立即生效，如果不生效请反馈
 
+# 是否打印请求体
+log_req_body = false
+# 是否打印响应体
+log_res_body = false
+
+# Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
+# mode 默认为 "anthropic"，直接透传 Anthropic 格式
+# 如需使用 OpenAI Responses 格式，设置 mode = "openai_responses"
 
-[[upstream]]
-endpoint = "https://open.bigmodel.cn/api/anthropic"
-model = "glm-4.7"
-api_keys = ["your_api_key1", "your_api_key2"]
+# Upstream 2: 可配置更多 upstream 实现负载均衡
+# [[upstream]]
+# endpoint = "https://another-provider.com/api/anthropic"
+# model = "claude-3-5-sonnet-20241022"
+# api_keys = ["your_key"]
+# mode = "anthropic"  # 可选: "anthropic" | "openai_responses" | "openai_chat"
+# openai_chat 暂未适配
 
 [optimizations]
-enable_network_probe_mock = true           # 拦截配额探测请求
-enable_fast_prefix_detection = true        # 快速前缀检测优化
-enable_historical_analysis_mock = true     # 跳过历史分析请求
-enable_title_generation_skip = true        # 跳过标题生成请求
-enable_suggestion_mode_skip = true         # 跳过建议模式请求
-enable_filepath_extraction_mock = true     # 文件路径提取优化
+enable_network_probe_mock = true
+enable_fast_prefix_detection = true
+enable_historical_analysis_mock = true
+enable_title_generation_skip = true
+enable_suggestion_mode_skip = true
+enable_filepath_extraction_mock = true
+
 ```
 
 ### ▶️ 测试运行
