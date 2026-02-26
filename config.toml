@@ -22,6 +22,7 @@ api_keys = ["your_api_key1", "your_api_key2"]
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
 # mode = "anthropic"  # 可选: "anthropic" | "openai_responses" | "openai_chat"
+# openai_chat 暂未适配
 
 [optimizations]
 enable_network_probe_mock = true
