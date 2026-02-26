@@ -20,6 +20,7 @@ use crate::{
                 req_local_intercept,
             },
             response::decompress_gzip_if_needed,
+            system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt},
             thinking_patch::patch_reasoning_for_thinking_mode,
             utils::setup_handler_state,
         },
@@ -61,6 +62,14 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     if req_local_intercept(req, res, &body_bytes, &cfg) {
         return;
     }
+
+    // 注入自定义系统提示词
+
+    let body_bytes = if body_bytes.is_empty() {
+        body_bytes
+    } else {
+        insert_custom_system_prompt(&body_bytes, CUSTOM_SYSTEM_PROMPT).unwrap_or(body_bytes)
+    };
 
     // 本地优化未命中，选择 upstream 和 api_key
     let (upstream_idx, endpoint, selected_model, api_key, mode) =
