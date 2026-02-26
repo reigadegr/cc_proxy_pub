@@ -6,14 +6,18 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-use crate::gateway::handler::request::get_req_body;
+use futures_util::StreamExt;
+use http_body_util::{BodyExt, BodyStream, Full};
+use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
+use salvo::{http::ResBody, prelude::*};
+
 use crate::{
     config::Mode,
     gateway::{
         handler::{
             request::{
-                filter_req_body, log_request_meta, make_proxy_url, override_model_in_body,
-                req_local_intercept,
+                filter_req_body, get_req_body, log_request_meta, make_proxy_url,
+                override_model_in_body, req_local_intercept,
             },
             response::decompress_gzip_if_needed,
             system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt},
@@ -24,10 +28,6 @@ use crate::{
         service::{calculate_tokens, log_full_body, log_full_response},
     },
 };
-use futures_util::StreamExt;
-use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
-use salvo::{http::ResBody, prelude::*};
 
 /// 代理请求 handler
 #[handler]
