@@ -27,9 +27,12 @@ pub enum Mode {
     #[serde(rename = "anthropic")]
     #[default]
     AnthropicDirect,
-    /// Claude CLI → `OpenAI` Responses 格式接口，需要进行请求/响应双向转换
-    #[serde(rename = "openai")]
-    OpenAIResponsesCompat,
+    /// Claude CLI → `OpenAI` Responses API 格式接口，需要进行请求/响应双向转换
+    #[serde(rename = "openai_responses")]
+    OpenAIResponses,
+    /// Claude CLI → `OpenAI` Chat Completions API 格式接口（预留）
+    #[serde(rename = "openai_chat")]
+    OpenAIChat,
 }
 
 /// 全局原子配置，支持热重载
