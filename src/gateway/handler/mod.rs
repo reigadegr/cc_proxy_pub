@@ -6,7 +6,6 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
@@ -14,13 +13,16 @@ use salvo::{http::ResBody, prelude::*};
 
 use crate::gateway::{
     handler::{
-        request::{filter_req_body, make_proxy_url, override_model_in_body, req_local_intercept},
+        request::{
+            filter_req_body, log_request_meta, make_proxy_url, override_model_in_body,
+            req_local_intercept,
+        },
         response::decompress_gzip_if_needed,
         thinking_patch::patch_reasoning_for_thinking_mode,
         utils::setup_handler_state,
     },
     openai_compat,
-    service::{calculate_tokens, log_full_body, log_full_response, log_request_info},
+    service::{calculate_tokens, log_full_body, log_full_response},
 };
 
 /// 代理请求 handler
@@ -36,7 +38,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     };
 
     // 记录请求头
-    log_request_info(
+    log_request_meta(
         req.method().as_str(),
         req.uri().to_string().as_str(),
         req.headers(),
@@ -51,8 +53,9 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         }
     };
 
+    let cfg = config.get();
     // 优先检查本地优化（不需要选择 upstream/key）
-    if req_local_intercept(req, res, &body_bytes, config) {
+    if req_local_intercept(req, res, &body_bytes, &cfg) {
         return;
     }
 
@@ -127,7 +130,10 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     if !body_bytes.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&body_bytes)
     {
-        log_full_body(body_str);
+        if cfg.log_req_body {
+            log_full_body(body_str);
+        }
+
         calculate_tokens(stats.as_ref(), body_str);
     }
 
@@ -230,7 +236,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
 
             // 记录原始上游响应（用于调试）
-            if oai_api && !body_bytes.is_empty() {
+            if oai_api && !body_bytes.is_empty() && cfg.log_res_body {
                 let raw_body_str = String::from_utf8_lossy(&body_bytes);
                 tracing::info!("=== 原始上游响应 (转换前) ===");
                 tracing::info!("{}", raw_body_str);
@@ -267,7 +273,9 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             let body_str = String::from_utf8_lossy(&body_bytes);
 
             // 记录响应体
-            log_full_response(&body_str);
+            if cfg.log_res_body {
+                log_full_response(&body_str);
+            }
 
             // 构建响应
             res.status_code(
