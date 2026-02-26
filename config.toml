@@ -20,3 +20,5 @@ enable_historical_analysis_mock = true
 enable_title_generation_skip = true
 enable_suggestion_mode_skip = true
 enable_filepath_extraction_mock = true
+log_res_body = false
+log_req_body = false
