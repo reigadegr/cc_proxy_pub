@@ -186,7 +186,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                 .is_some_and(|ct| ct.contains("text/event-stream"));
 
             if is_sse {
-                // SSE：流式透传 + 实时日志
+                // SSE：流式透传 + 实时日志（仅在配置启用时）
                 tracing::info!("=== SSE 流式响应开始 ===");
                 res.status_code(
                     StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -198,9 +198,11 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                         res.headers_mut().insert(name, value);
                     }
                 }
+                let log_body = cfg.log_res_body;
                 let stream = BodyStream::new(body)
-                    .inspect(|frame| {
-                        if let Ok(f) = frame
+                    .inspect(move |frame| {
+                        if log_body
+                            && let Ok(f) = frame
                             && let Some(data) = f.data_ref()
                             && let Ok(s) = std::str::from_utf8(data)
                         {
