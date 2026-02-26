@@ -20,6 +20,18 @@ use tracing::{error, info, warn};
 
 use self::selector::UpstreamSelector;
 
+/// 工作模式枚举
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Claude CLI → Anthropic 格式接口，不进行任何格式转换
+    #[serde(rename = "anthropic")]
+    #[default]
+    AnthropicDirect,
+    /// Claude CLI → `OpenAI` Responses 格式接口，需要进行请求/响应双向转换
+    #[serde(rename = "openai")]
+    OpenAIResponsesCompat,
+}
+
 /// 全局原子配置，支持热重载
 pub struct AtomicConfig {
     inner: ArcSwap<Config>,
@@ -39,9 +51,9 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
-    /// 启用 `OpenAI` 格式转换（Claude CLI ↔ `OpenAI` API）
+    /// 上游模式：直通 Anthropic 或兼容 `OpenAI` Responses
     #[serde(default)]
-    pub oai_api: bool,
+    pub mode: Mode,
 }
 
 /// 配置结构
@@ -101,7 +113,7 @@ impl Default for UpstreamConfig {
             endpoint: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
-            oai_api: false,
+            mode: Mode::AnthropicDirect,
         }
     }
 }

@@ -11,7 +11,7 @@ use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
 
 use crate::{
-    config::Config,
+    config::{Config, Mode},
     gateway::{
         handler::{
             content_tag::filter_messages_content, system_prompt::filter_system_prompts,
@@ -105,11 +105,7 @@ pub fn req_local_intercept(
     false
 }
 
-pub fn make_proxy_url<'a>(
-    endpoint: &'a str,
-    oai_api: bool,
-    req: &Request,
-) -> (String, Cow<'a, str>) {
+pub fn make_proxy_url<'a>(endpoint: &'a str, mode: Mode, req: &Request) -> (String, Cow<'a, str>) {
     // 解析 endpoint
     let host_str = endpoint
         .strip_prefix("https://")
@@ -148,7 +144,7 @@ pub fn make_proxy_url<'a>(
     upstream_url = upstream_url.replace("?beta=true", "");
 
     // 只有当 oai_api=true 时才将 messages 替换为 responses
-    if oai_api {
+    if matches!(mode, Mode::OpenAIResponsesCompat) {
         upstream_url = upstream_url.replace("messages", "responses");
     }
     upstream_url = upstream_url.replace("claude/", "");

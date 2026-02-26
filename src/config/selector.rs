@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::UpstreamConfig;
+use super::{Mode, UpstreamConfig};
 
 /// Upstream 选择器，使用双层 round-robin 策略
 pub struct UpstreamSelector {
@@ -44,8 +44,8 @@ impl UpstreamSelector {
     /// 请求6: upstream[1], key[2]
     /// 请求7: upstream[0], key[0]  (循环)
     ///
-    /// 返回 (upstream索引, endpoint, model, `api_key`, `oai_api`)
-    pub fn next(&self) -> Option<(usize, &str, &str, &str, bool)> {
+    /// 返回 (upstream索引, endpoint, model, `api_key`, `mode`)
+    pub fn next(&self) -> Option<(usize, &str, &str, &str, Mode)> {
         if self.upstreams.is_empty() {
             return None;
         }
@@ -74,7 +74,7 @@ impl UpstreamSelector {
             &upstream.endpoint,
             &upstream.model,
             api_key,
-            upstream.oai_api,
+            upstream.mode,
         ))
     }
 }
@@ -90,7 +90,7 @@ mod tests {
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
-                oai_api: false,
+                mode: Mode::AnthropicDirect,
             },
             UpstreamConfig {
                 endpoint: "https://upstream2.example.com".to_string(),
@@ -100,7 +100,7 @@ mod tests {
                     "key2b".to_string(),
                     "key2c".to_string(),
                 ],
-                oai_api: true,
+                mode: Mode::OpenAIResponsesCompat,
             },
         ]
     }
@@ -115,18 +115,16 @@ mod tests {
         // 双层轮询：先每个upstream用key[0]，然后每个upstream用key[1]，依此类推
 
         // 请求1: upstream[0], key[0]
-        let (idx0, _ep0, _, key0, oai_api0) =
-            selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx0, _ep0, _, key0, mode0) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx0, 0);
         assert_eq!(key0, "key1a");
-        assert!(!oai_api0);
+        assert_eq!(mode0, Mode::AnthropicDirect);
 
         // 请求2: upstream[1], key[0]
-        let (idx1, _ep1, _, key1, oai_api1) =
-            selector.next().expect("测试数据确保 next() 返回有效值");
+        let (idx1, _ep1, _, key1, mode1) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx1, 1);
         assert_eq!(key1, "key2a");
-        assert!(oai_api1);
+        assert_eq!(mode1, Mode::OpenAIResponsesCompat);
 
         // 请求3: upstream[0], key[1]
         let (idx2, _, _, key2, _) = selector.next().expect("测试数据确保 next() 返回有效值");
