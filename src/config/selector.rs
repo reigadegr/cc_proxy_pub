@@ -100,7 +100,7 @@ mod tests {
                     "key2b".to_string(),
                     "key2c".to_string(),
                 ],
-                mode: Mode::OpenAIResponsesCompat,
+                mode: Mode::OpenAIResponses,
             },
         ]
     }
@@ -124,7 +124,7 @@ mod tests {
         let (idx1, _ep1, _, key1, mode1) = selector.next().expect("测试数据确保 next() 返回有效值");
         assert_eq!(idx1, 1);
         assert_eq!(key1, "key2a");
-        assert_eq!(mode1, Mode::OpenAIResponsesCompat);
+        assert_eq!(mode1, Mode::OpenAIResponses);
 
         // 请求3: upstream[0], key[1]
         let (idx2, _, _, key2, _) = selector.next().expect("测试数据确保 next() 返回有效值");

@@ -144,7 +144,7 @@ pub fn make_proxy_url<'a>(endpoint: &'a str, mode: Mode, req: &Request) -> (Stri
     upstream_url = upstream_url.replace("?beta=true", "");
 
     // 只有当 oai_api=true 时才将 messages 替换为 responses
-    if matches!(mode, Mode::OpenAIResponsesCompat) {
+    if matches!(mode, Mode::OpenAIResponses) {
         upstream_url = upstream_url.replace("messages", "responses");
     }
     upstream_url = upstream_url.replace("claude/", "");

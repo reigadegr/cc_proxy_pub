@@ -102,7 +102,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     };
 
     // 如果 oai_api 启用，转换请求体格式：Claude → OpenAI Responses
-    let body_bytes = if matches!(mode, Mode::OpenAIResponsesCompat) && !body_bytes.is_empty() {
+    let body_bytes = if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() {
         match openai_compat::anthropic_request_to_responses(&body_bytes) {
             Ok(converted) => {
                 tracing::debug!(
@@ -239,10 +239,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
 
             // 记录原始上游响应（用于调试）
-            if matches!(mode, Mode::OpenAIResponsesCompat)
-                && !body_bytes.is_empty()
-                && cfg.log_res_body
-            {
+            if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() && cfg.log_res_body {
                 let raw_body_str = String::from_utf8_lossy(&body_bytes);
                 tracing::info!("=== 原始上游响应 (转换前) ===");
                 tracing::info!("{}", raw_body_str);
@@ -250,9 +247,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
             }
 
             // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
-            let body_bytes = if matches!(mode, Mode::OpenAIResponsesCompat)
-                && !body_bytes.is_empty()
-            {
+            let body_bytes = if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() {
                 match openai_compat::responses_response_to_anthropic(
                     &body_bytes,
                     if selected_model.is_empty() {
