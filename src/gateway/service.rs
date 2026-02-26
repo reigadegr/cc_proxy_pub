@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::atomic::Ordering};
 
-use http::HeaderMap;
 use rayon::prelude::*;
 use serde_json::Value;
 use tracing::{info, warn};
@@ -206,18 +205,4 @@ pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
             0.0
         }
     );
-}
-
-/// 打印全部请求头
-pub fn log_request_info(method: &str, uri: &str, headers: &HeaderMap) {
-    info!("=== 请求头 ===");
-    info!("Method: {}", method);
-    info!("URI: {}", uri);
-
-    for (name, value) in headers {
-        if let Ok(value_str) = value.to_str() {
-            info!("{}: {}", name, value_str);
-        }
-    }
-    info!("=== 请求头结束 ===");
 }

@@ -53,6 +53,12 @@ pub struct Config {
     /// 本地优化拦截开关
     #[serde(default)]
     pub optimizations: OptimizationConfig,
+    /// 是否打印请求体
+    #[serde(default)]
+    pub log_req_body: bool,
+    /// 是否打印响应体
+    #[serde(default)]
+    pub log_res_body: bool,
 }
 
 /// 本地优化配置
@@ -152,6 +158,8 @@ impl AtomicConfig {
             config.optimizations.enable_suggestion_mode_skip,
             config.optimizations.enable_filepath_extraction_mock,
         );
+        info!("log_req_body: {}", config.log_req_body);
+        info!("log_res_body: {}", config.log_res_body);
 
         // 创建 Upstream 选择器（双层轮询）
         let upstream_selector = UpstreamSelector::new(config.upstream.clone()).map(Arc::new);
@@ -198,7 +206,8 @@ impl AtomicConfig {
                 // 检测配置是否真的发生了变化
                 let upstream_changed = old.upstream != new_config.upstream;
                 let optimizations_changed = old.optimizations != new_config.optimizations;
-
+                let log_req_body_changed = old.log_req_body != new_config.log_req_body;
+                let log_res_body_changed = old.log_res_body != new_config.log_res_body;
                 self.inner.store(Arc::new(new_config.clone()));
 
                 // 更新 Upstream 选择器
@@ -208,7 +217,11 @@ impl AtomicConfig {
                     self.upstream_selector.store(Arc::new(new_selector));
                 }
 
-                if upstream_changed || optimizations_changed {
+                if upstream_changed
+                    || optimizations_changed
+                    || log_req_body_changed
+                    || log_res_body_changed
+                {
                     info!("✅ 配置已更新:");
                     if upstream_changed {
                         info!(
@@ -240,6 +253,20 @@ impl AtomicConfig {
                             new_config.optimizations.enable_suggestion_mode_skip,
                             old.optimizations.enable_filepath_extraction_mock,
                             new_config.optimizations.enable_filepath_extraction_mock,
+                        );
+                    }
+
+                    if log_req_body_changed {
+                        info!(
+                            "log_req_body: {}→{}",
+                            old.log_req_body, new_config.log_req_body,
+                        );
+                    }
+
+                    if log_res_body_changed {
+                        info!(
+                            "log_res_body: {}→{}",
+                            old.log_res_body, new_config.log_res_body,
                         );
                     }
                 } else {

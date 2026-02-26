@@ -1,14 +1,17 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Result, bail};
+use arc_swap::Guard;
 use bytes::Bytes;
+use http::HeaderMap;
 use http_body_util::BodyExt;
 use hyper::header::{HeaderName, HeaderValue};
 use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
+use tracing::info;
 
 use crate::{
-    AtomicConfig,
+    config::Config,
     gateway::{
         handler::{
             content_tag::filter_messages_content, system_prompt::filter_system_prompts,
@@ -18,21 +21,6 @@ use crate::{
         service::log_full_response,
     },
 };
-
-/// 尝试覆盖请求体中的 model 字段
-pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
-    let json = from_slice::<Value>(body_bytes).ok()?;
-    let original_model = json.get("model").and_then(|m| m.as_str());
-
-    if let Some(original) = original_model {
-        tracing::info!("原始 model: {} -> 覆盖为: {}", original, model);
-    }
-
-    let mut modified = json;
-    modified["model"] = json!(model);
-
-    to_vec(&modified).ok().map(Into::into)
-}
 
 pub async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体
@@ -66,18 +54,33 @@ pub async fn filter_req_body(req: &mut Request) -> Result<Bytes> {
     Ok(body_bytes)
 }
 
+/// 尝试覆盖请求体中的 model 字段
+pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
+    let json = from_slice::<Value>(body_bytes).ok()?;
+    let original_model = json.get("model").and_then(|m| m.as_str());
+
+    if let Some(original) = original_model {
+        info!("原始 model: {} -> 覆盖为: {}", original, model);
+    }
+
+    let mut modified = json;
+    modified["model"] = json!(model);
+
+    to_vec(&modified).ok().map(Into::into)
+}
+
 pub fn req_local_intercept(
     req: &Request,
     res: &mut Response,
     body_bytes: &Bytes,
-    config: &Arc<AtomicConfig>,
+    config: &Guard<Arc<Config>>,
 ) -> bool {
     if let Some(local_response) = try_local_optimization(
         body_bytes,
         req.uri().to_string().as_str(),
-        &config.get().optimizations,
+        &config.optimizations,
     ) {
-        tracing::info!("✅ 本地优化命中: {}", local_response.reason);
+        info!("✅ 本地优化命中: {}", local_response.reason);
 
         res.status_code(StatusCode::OK);
         res.headers_mut().insert(
@@ -90,7 +93,9 @@ pub fn req_local_intercept(
                 .insert(HeaderName::from_static("x-cc-proxy-optimization"), value);
         }
 
-        if let Ok(body_str) = std::str::from_utf8(&local_response.body) {
+        if let Ok(body_str) = std::str::from_utf8(&local_response.body)
+            && config.log_res_body
+        {
             log_full_response(body_str);
         }
 
@@ -151,6 +156,20 @@ pub fn make_proxy_url<'a>(
         upstream_url = upstream_url.replace("//", "/");
     }
     upstream_url = format!("{scheme}://{upstream_url}");
-    tracing::info!("Proxying to: {}", upstream_url);
+    info!("Proxying to: {}", upstream_url);
     (upstream_url, Cow::Borrowed(host))
+}
+
+/// 打印全部请求头
+pub fn log_request_meta(method: &str, uri: &str, headers: &HeaderMap) {
+    info!("=== 请求头 ===");
+    info!("Method: {}", method);
+    info!("URI: {}", uri);
+
+    for (name, value) in headers {
+        if let Ok(value_str) = value.to_str() {
+            info!("{}: {}", name, value_str);
+        }
+    }
+    info!("=== 请求头结束 ===");
 }
