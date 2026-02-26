@@ -2,13 +2,13 @@ use serde_json::{Value, from_slice, to_vec};
 
 /// 需要从 system 数组中移除的文本特征（多个标记，匹配任意一个即过滤）
 const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
-    // Claude CLI 的主要提示词
-    "You are an interactive CLI tool that helps users with soft",
-    // Claude Code 身份标识
+    // // Claude CLI 的主要提示词
+    // "You are an interactive CLI tool that helps users with soft",
+    // // Claude Code 身份标识
     "You are Claude Code",
-    // Claude Code 查找文件标识
+    // // Claude Code 查找文件标识
     "You are a file search specialist for Claude Code",
-    // Claude Code 无意义版本信息
+    // // Claude Code 无意义版本信息
     "x-anthropic-billing-header: cc_version=",
 ];
 

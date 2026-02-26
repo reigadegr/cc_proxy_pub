@@ -62,18 +62,18 @@ pub struct UpstreamConfig {
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// 上游提供商配置列表（支持多个上游负载均衡）
-    #[serde(default)]
-    pub upstream: Vec<UpstreamConfig>,
-    /// 本地优化拦截开关
-    #[serde(default)]
-    pub optimizations: OptimizationConfig,
     /// 是否打印请求体
     #[serde(default)]
     pub log_req_body: bool,
     /// 是否打印响应体
     #[serde(default)]
     pub log_res_body: bool,
+    /// 上游提供商配置列表（支持多个上游负载均衡）
+    #[serde(default)]
+    pub upstream: Vec<UpstreamConfig>,
+    /// 本地优化拦截开关
+    #[serde(default)]
+    pub optimizations: OptimizationConfig,
 }
 
 /// 本地优化配置
