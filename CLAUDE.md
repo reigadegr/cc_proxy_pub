@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-本文件为 Claude Code (claude.ai/code) 提供在此代码库中工作的指导。
-
 ## 项目概述
 
 **CC Proxy** 是专为 [Claude Code CLI](https://claude.com/claude-code) 设计的高性能 API 代理网关。
@@ -90,10 +86,16 @@ sh debug.sh
 代理读取 `config.toml`（或第一个命令行参数指定的路径）。示例：
 
 ```toml
+log_req_body = false
+log_res_body = false
+
+# Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
-endpoint = "https://api.example.com/v1"
-model = "claude-3-5-sonnet-20241022"
-api_keys = ["key1", "key2"]
+endpoint = "https://open.bigmodel.cn/api/anthropic"
+model = "glm-4.7"
+api_keys = ["your_api_key1", "your_api_key2"]
+# mode 默认为 "anthropic"，直接透传 Anthropic 格式
+# 可选: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]
 enable_network_probe_mock = true
