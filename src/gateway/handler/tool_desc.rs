@@ -10,6 +10,7 @@ const TOOLS_DESCRIPTION_FILTER_KEYWORDS: &[&str] = &[
     "Search for website action manuals by keyword.",
     "Get complete action details by area_id, including DOM selectors and element information.",
     "Get complete action details by action ID, including DOM selectors and step-by-step instructions.",
+    "Completely replaces the contents of a specific cell in a Jupyter notebook",
 ];
 
 /// 检查 tool.description 是否包含需要过滤的关键词
