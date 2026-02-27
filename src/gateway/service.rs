@@ -128,34 +128,9 @@ pub fn log_full_body(body: &str) {
 
 // 辅助函数：分段打印响应体
 pub fn log_full_response(body: &str) {
-    const CHUNK_SIZE: usize = 8000;
-
     let len = body.len();
     info!("=== 响应体 (共 {} 字节) ===", len);
-
-    if len <= CHUNK_SIZE {
-        info!("{}", body);
-    } else {
-        let total_chunks = len.div_ceil(CHUNK_SIZE);
-        let mut start = 0;
-
-        for i in 0..total_chunks {
-            let mut end = (start + CHUNK_SIZE).min(len);
-
-            while end < len && !body.is_char_boundary(end) {
-                end -= 1;
-            }
-
-            if let Some(chunk) = body.get(start..end) {
-                info!("--- 第 {}/{} 段 ---\n{}", i + 1, total_chunks, chunk);
-            } else {
-                warn!("无法获取第 {}/{} 段内容", i + 1, total_chunks);
-                break;
-            }
-
-            start = end;
-        }
-    }
+    info!("{}", body);
     info!("=== 响应体结束 ===");
 }
 
