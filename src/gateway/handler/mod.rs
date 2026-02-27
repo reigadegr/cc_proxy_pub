@@ -41,13 +41,6 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         }
     };
 
-    // 记录请求头
-    log_request_meta(
-        req.method().as_str(),
-        req.uri().to_string().as_str(),
-        req.headers(),
-    );
-
     let body_bytes = match get_req_body(req).await {
         Ok(v) => v,
         Err(e) => {
@@ -62,6 +55,13 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     if req_local_intercept(req, res, &body_bytes, &cfg) {
         return;
     }
+
+    // 记录请求头
+    log_request_meta(
+        req.method().as_str(),
+        req.uri().to_string().as_str(),
+        req.headers(),
+    );
 
     // 注入自定义系统提示词
     let body_bytes = if body_bytes.is_empty() {
