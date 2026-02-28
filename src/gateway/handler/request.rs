@@ -71,6 +71,7 @@ pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
 
     let mut modified = json;
     modified["model"] = json!(model);
+    modified["stream"] = json!(false);
 
     to_vec(&modified).ok().map(Into::into)
 }

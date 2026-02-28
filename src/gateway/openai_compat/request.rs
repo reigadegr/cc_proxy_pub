@@ -30,10 +30,7 @@ pub fn anthropic_request_to_responses(body: &Bytes) -> Result<Bytes, String> {
         .and_then(Value::as_str)
         .ok_or_else(|| "Request must include model.".to_string())?;
 
-    let stream = object
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let stream = false; // 强制禁用流式响应，确保格式转换准确
 
     let max_output_tokens = object
         .get("max_tokens")
