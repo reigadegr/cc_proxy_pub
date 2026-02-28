@@ -149,11 +149,12 @@ fn extract_env_info(json: &Value) -> Option<String> {
         if let Some(text) = item.get("text")?.as_str() {
             // 查找标签内容
             if let Some(start) = text.find("# auto memory")
-                && let Some(end) = text[start..].find(" - You are powered by the model") {
-                    let env_content = &text[start..start + end];
-                    // 构建完整的格式化文本
-                    return Some(format!("\n{}\n", env_content.trim()));
-                }
+                && let Some(end) = text[start..].find(" - You are powered by the model")
+            {
+                let env_content = &text[start..start + end];
+                // 构建完整的格式化文本
+                return Some(format!("\n{}\n", env_content.trim()));
+            }
         }
     }
     None

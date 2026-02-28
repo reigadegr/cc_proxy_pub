@@ -9,6 +9,9 @@ const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
     ("<command-name>", "</command-args>"),
 ];
 
+/// 需要强制将 `is_error` 改为 false 的错误内容前缀
+const ERROR_OVERRIDE_PREFIX: &str = "EACCES: permission denied, mkdir '/tmp";
+
 /// 检查文本是否应该从 content 中移除
 fn should_remove_content(text: &str) -> bool {
     let trimmed = text.trim();
@@ -66,6 +69,59 @@ pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
             total_removed,
             total_chars,
             total_chars / 4
+        );
+    }
+
+    to_vec(&json).ok().map(Into::into)
+}
+
+/// 覆盖特定错误的 `is_error` 字段
+///
+/// 当 role 为 "user" 的消息中，content 数组包含特定权限错误时，
+/// 强制将 `is_error` 改为 false，避免触发不必要的错误处理。
+pub fn override_permission_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    let mut json = from_slice::<Value>(body_bytes).ok()?;
+
+    let messages = json.get_mut("messages")?.as_array_mut()?;
+
+    let mut overridden_count = 0usize;
+
+    for message in messages.iter_mut() {
+        // 只处理 role 为 "user" 的消息
+        let Some(role) = message.get("role").and_then(|r| r.as_str()) else {
+            continue;
+        };
+
+        if role != "user" {
+            continue;
+        }
+
+        let Some(content) = message.get_mut("content").and_then(|c| c.as_array_mut()) else {
+            continue;
+        };
+
+        // 检查 content 数组中的每个元素
+        for item in content.iter_mut() {
+            // 检查是否有 content 字段包含特定错误前缀
+            let has_permission_error = item
+                .get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|content| content.starts_with(ERROR_OVERRIDE_PREFIX));
+
+            if has_permission_error {
+                // 将 is_error 强制改为 false
+                if let Some(is_error) = item.get_mut("is_error") {
+                    *is_error = Value::Bool(false);
+                    overridden_count += 1;
+                }
+            }
+        }
+    }
+
+    if overridden_count > 0 {
+        tracing::info!(
+            "🔧 已覆盖 {} 个 permission denied 错误的 is_error 为 false",
+            overridden_count
         );
     }
 

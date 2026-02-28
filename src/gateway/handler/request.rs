@@ -14,7 +14,8 @@ use crate::{
     config::{Config, Mode},
     gateway::{
         handler::{
-            content_tag::filter_messages_content, system_prompt::filter_system_prompts,
+            content_tag::{filter_messages_content, override_permission_error},
+            system_prompt::filter_system_prompts,
             tool_desc::filter_tools_by_description,
         },
         optimization::try_local_optimization,
@@ -46,6 +47,13 @@ pub async fn filter_req_body(body_bytes: &[u8]) -> Result<Bytes> {
     // 过滤 messages.content 中占用大量 tokens 的无用标签
     if !current.is_empty()
         && let Some(filtered) = filter_messages_content(&current)
+    {
+        current = filtered;
+    }
+
+    // 覆盖特定权限错误的 is_error 字段
+    if !current.is_empty()
+        && let Some(filtered) = override_permission_error(&current)
     {
         current = filtered;
     }
