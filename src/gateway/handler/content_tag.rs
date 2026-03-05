@@ -7,6 +7,7 @@ const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
     ("<command-name>", "</command-name>"),
     ("<local-command-caveat>", "</local-command-caveat>"),
     ("<command-name>", "</command-args>"),
+    ("<available-deferred-tools>", "</available-deferred-tools>"),
 ];
 
 /// 需要强制将 `is_error` 改为 false 的错误内容前缀
