@@ -42,26 +42,37 @@ pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut total_chars = 0usize;
 
     for message in messages.iter_mut() {
-        let Some(content) = message.get_mut("content").and_then(|c| c.as_array_mut()) else {
-            continue;
-        };
-
-        // 统计移除前的信息
-        for item in content.iter() {
-            if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                && should_remove_content(text)
-            {
-                total_removed += 1;
-                total_chars += text.len();
+        // 处理 content 为数组的情况
+        if let Some(content) = message.get_mut("content").and_then(|c| c.as_array_mut()) {
+            // 统计移除前的信息
+            for item in content.iter() {
+                if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                    && should_remove_content(text)
+                {
+                    total_removed += 1;
+                    total_chars += text.len();
+                }
             }
+
+            // 过滤掉需要移除的内容
+            content.retain(|item| {
+                item.get("text")
+                    .and_then(|t| t.as_str())
+                    .is_none_or(|text| !should_remove_content(text))
+            });
         }
 
-        // 过滤掉需要移除的内容
-        content.retain(|item| {
-            item.get("text")
-                .and_then(|t| t.as_str())
-                .is_none_or(|text| !should_remove_content(text))
-        });
+        // 处理 content 为字符串的情况
+        if let Some(content_val) = message.get("content").and_then(|c| c.as_str())
+            && should_remove_content(content_val)
+        {
+            total_removed += 1;
+            total_chars += content_val.len();
+            // 移除整个 content 字段（设置为空字符串）
+            if let Some(json_val) = message.get_mut("content") {
+                *json_val = Value::String(String::new());
+            }
+        }
     }
 
     if total_removed > 0 {
