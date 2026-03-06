@@ -360,7 +360,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
     }
 }
 
-/// Codex 代理 handler - 仅转发 mode = "`openai_responses`" 的上游请求
+/// Codex 代理 handler - 仅从 mode = "`openai_responses`" 的上游中选择并转发请求
 #[handler]
 pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let (config, _stats, client) = match setup_handler_state(depot) {
@@ -374,10 +374,11 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
 
     let cfg = config.get();
 
-    // 检查上游 mode 是否为 "openai_responses"
     let (upstream_idx, endpoint, selected_model, api_key, mode) =
         if let Some(selector) = config.get_upstream_selector() {
-            if let Some((idx, endpoint, model, key, mode)) = selector.next() {
+            if let Some((idx, endpoint, model, key, mode)) =
+                selector.next_by_mode(Mode::OpenAIResponses)
+            {
                 (
                     idx,
                     endpoint.to_owned(),
@@ -386,7 +387,7 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
                     mode,
                 )
             } else {
-                tracing::error!("No upstream configured");
+                tracing::error!("No upstream configured with mode = 'openai_responses'");
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
                 return;
             }
@@ -395,18 +396,6 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
             return;
         };
-
-    // 只处理 mode = "openai_responses" 的上游
-    if !matches!(mode, crate::config::Mode::OpenAIResponses) {
-        tracing::warn!(
-            "Codex 代理拒绝: Upstream[{}] mode 不是 'openai_responses' (当前: {:?})",
-            upstream_idx,
-            mode
-        );
-        res.status_code(StatusCode::NOT_FOUND);
-        res.render("Not Found");
-        return;
-    }
 
     // 获取请求体
     let body_bytes = match get_req_body(req).await {
