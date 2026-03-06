@@ -79,7 +79,7 @@ pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
 
     let mut modified = json;
     modified["model"] = json!(model);
-    modified["stream"] = json!(false);
+    // modified["stream"] = json!(false); // 注释掉以保留原始请求的 stream 值
 
     to_vec(&modified).ok().map(Into::into)
 }
@@ -163,6 +163,7 @@ pub fn make_proxy_url<'a>(endpoint: &'a str, mode: Mode, req: &Request) -> (Stri
         upstream_url = upstream_url.replace("messages", "responses");
     }
     upstream_url = upstream_url.replace("claude/", "");
+    upstream_url = upstream_url.replace("codex/", "");
     while upstream_url.contains("//") {
         upstream_url = upstream_url.replace("//", "/");
     }
