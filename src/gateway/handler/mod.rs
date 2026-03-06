@@ -6,10 +6,12 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
+use futures_util::Stream;
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::{http::ResBody, prelude::*};
+use std::pin::Pin;
 
 use crate::{
     config::Mode,
@@ -216,27 +218,60 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                         res.headers_mut().insert(name, value);
                     }
                 }
+
                 let log_body = cfg.log_res_body;
-                let stream = BodyStream::new(body)
-                    .inspect(move |frame| {
-                        if log_body
-                            && let Ok(f) = frame
-                            && let Some(data) = f.data_ref()
-                            && let Ok(s) = std::str::from_utf8(data)
-                        {
-                            tracing::info!("{}", s);
-                        }
-                    })
-                    .filter_map(|frame| async move {
-                        match frame {
-                            Ok(f) => f.into_data().ok(),
-                            Err(e) => {
-                                tracing::error!("SSE 流读取错误: {}", e);
-                                None
-                            }
-                        }
-                    })
-                    .map(Ok::<bytes::Bytes, std::convert::Infallible>);
+
+                // 根据 mode 决定是否需要转换流格式
+                let stream = if matches!(mode, Mode::OpenAIResponses) {
+                    // 使用流式转换器将 OpenAI Responses 格式转换为 Anthropic 格式
+                    tracing::info!("🔄 使用 OpenAI Responses → Anthropic 流式转换器");
+                    Box::pin(openai_compat::ResponsesStreamConverter::new(
+                        BodyStream::new(body),
+                        if selected_model.is_empty() {
+                            None
+                        } else {
+                            Some(selected_model.clone())
+                        },
+                    ))
+                        as Pin<
+                            Box<
+                                dyn Stream<Item = Result<bytes::Bytes, std::convert::Infallible>>
+                                    + Send,
+                            >,
+                        >
+                } else {
+                    // 直接透传 Anthropic 格式的 SSE 流
+                    tracing::info!("⏭️ 直接透传 Anthropic 格式 SSE 流");
+                    Box::pin(
+                        BodyStream::new(body)
+                            .inspect(move |frame| {
+                                if log_body
+                                    && let Ok(f) = frame
+                                    && let Some(data) = f.data_ref()
+                                    && let Ok(s) = std::str::from_utf8(data)
+                                {
+                                    tracing::info!("{}", s);
+                                }
+                            })
+                            .filter_map(|frame| async move {
+                                match frame {
+                                    Ok(f) => f.into_data().ok(),
+                                    Err(e) => {
+                                        tracing::error!("SSE 流读取错误: {}", e);
+                                        None
+                                    }
+                                }
+                            })
+                            .map(Ok::<bytes::Bytes, std::convert::Infallible>),
+                    )
+                        as Pin<
+                            Box<
+                                dyn Stream<Item = Result<bytes::Bytes, std::convert::Infallible>>
+                                    + Send,
+                            >,
+                        >
+                };
+
                 res.body(ResBody::stream(stream));
                 return;
             }
@@ -471,6 +506,9 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
                         res.headers_mut().insert(name, value);
                     }
                 }
+
+                // Codex CLI 使用 OpenAI Responses 协议，SSE 直通上游数据
+                tracing::info!("⏭️ Codex: 直接透传 OpenAI Responses SSE 流");
                 let log_body = cfg.log_res_body;
                 let stream = BodyStream::new(body)
                     .inspect(move |frame| {
@@ -492,6 +530,7 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
                         }
                     })
                     .map(Ok::<bytes::Bytes, std::convert::Infallible>);
+
                 res.body(ResBody::stream(stream));
                 tracing::info!("=== Codex SSE 流式响应结束 ===");
                 return;

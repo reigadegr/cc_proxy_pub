@@ -11,6 +11,7 @@ use bytes::Bytes;
 mod media;
 mod request;
 mod response;
+mod streaming;
 mod tools;
 
 /// Claude 请求 → `OpenAI` Responses 请求
@@ -25,3 +26,6 @@ pub fn responses_response_to_anthropic(
 ) -> Result<Bytes, String> {
     response::responses_response_to_anthropic(body, model_hint)
 }
+
+/// 导出流式转换器
+pub use streaming::ResponsesStreamConverter;
