@@ -136,10 +136,29 @@ impl AtomicConfig {
 
         let raw_content = fs::read_to_string(&config_path).unwrap_or_default();
 
-        // 格式化TOML并写回文件
+        info!(
+            "🧹 开始格式化配置文件: {:?} ({} 字节)",
+            config_path,
+            raw_content.len()
+        );
+
         let formatted_content = format_toml(&raw_content);
-        if let Err(e) = fs::write(&config_path, formatted_content) {
-            warn!("写入格式化配置失败: {}", e);
+        let formatting_changed = raw_content != formatted_content;
+        if formatting_changed {
+            info!(
+                "✨ 配置文件格式化后有变化: {:?} ({} -> {} 字节)",
+                config_path,
+                raw_content.len(),
+                formatted_content.len()
+            );
+        } else {
+            info!("ℹ️ 配置文件格式化后无变化: {:?}", config_path);
+        }
+
+        if let Err(e) = fs::write(&config_path, &formatted_content) {
+            warn!("❌ 写入格式化配置失败: {:?}, error: {}", config_path, e);
+        } else {
+            info!("✅ 配置文件格式化结果已写回: {:?}", config_path);
         }
 
         let config = Self::load_from_file(&config_path).unwrap_or_else(|e| {
