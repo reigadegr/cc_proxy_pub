@@ -6,12 +6,10 @@ mod thinking_patch;
 mod tool_desc;
 mod utils;
 
-use futures_util::Stream;
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
 use salvo::{http::ResBody, prelude::*};
-use std::pin::Pin;
 
 use crate::{
     config::Mode,
@@ -26,7 +24,6 @@ use crate::{
             thinking_patch::patch_reasoning_for_thinking_mode,
             utils::setup_handler_state,
         },
-        openai_compat,
         service::{calculate_tokens, log_full_body, log_full_response},
     },
 };
@@ -82,10 +79,12 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         }
     };
 
-    // 本地优化未命中，选择 upstream 和 api_key
+    // 本地优化未命中，只从 anthropic upstream 中选择 upstream 和 api_key
     let (upstream_idx, endpoint, selected_model, api_key, mode) =
         if let Some(selector) = config.get_upstream_selector() {
-            if let Some((idx, endpoint, model, key, mode)) = selector.next() {
+            if let Some((idx, endpoint, model, key, mode)) =
+                selector.next_by_mode(Mode::AnthropicDirect)
+            {
                 (
                     idx,
                     endpoint.to_owned(),
@@ -94,7 +93,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                     mode,
                 )
             } else {
-                tracing::error!("No upstream configured");
+                tracing::error!("No upstream configured with mode = 'anthropic'");
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
                 return;
             }
@@ -121,32 +120,14 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
         body_bytes
     };
 
-    // 如果 oai_api 启用，转换请求体格式：Claude → OpenAI Responses
-    let body_bytes = if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() {
-        match openai_compat::anthropic_request_to_responses(&body_bytes) {
-            Ok(converted) => {
-                tracing::debug!(
-                    "🔄 请求体格式转换: Claude → OpenAI Responses ({} bytes → {} bytes)",
-                    body_bytes.len(),
-                    converted.len()
-                );
-                converted
-            }
-            Err(e) => {
-                tracing::warn!("请求体格式转换失败: {}，使用原始请求体", e);
-                body_bytes
-            }
-        }
+    // 只处理请求体，响应保持透传
+    let body_bytes = if body_bytes.is_empty() {
+        body_bytes
+    } else if let Some(patched) = patch_reasoning_for_thinking_mode(&body_bytes) {
+        tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
+        patched
     } else {
-        // 直接转发 Anthropic 格式时，为 Kimi 等支持 Thinking 的模型补全 reasoning_content
-        if body_bytes.is_empty() {
-            body_bytes
-        } else if let Some(patched) = patch_reasoning_for_thinking_mode(&body_bytes) {
-            tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
-            patched
-        } else {
-            body_bytes
-        }
+        body_bytes
     };
 
     // 记录请求体并计算 token
@@ -221,56 +202,27 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
 
                 let log_body = cfg.log_res_body;
 
-                // 根据 mode 决定是否需要转换流格式
-                let stream = if matches!(mode, Mode::OpenAIResponses) {
-                    // 使用流式转换器将 OpenAI Responses 格式转换为 Anthropic 格式
-                    tracing::info!("🔄 使用 OpenAI Responses → Anthropic 流式转换器");
-                    Box::pin(openai_compat::ResponsesStreamConverter::new(
-                        BodyStream::new(body),
-                        if selected_model.is_empty() {
-                            None
-                        } else {
-                            Some(selected_model.clone())
-                        },
-                    ))
-                        as Pin<
-                            Box<
-                                dyn Stream<Item = Result<bytes::Bytes, std::convert::Infallible>>
-                                    + Send,
-                            >,
-                        >
-                } else {
-                    // 直接透传 Anthropic 格式的 SSE 流
-                    tracing::info!("⏭️ 直接透传 Anthropic 格式 SSE 流");
-                    Box::pin(
-                        BodyStream::new(body)
-                            .inspect(move |frame| {
-                                if log_body
-                                    && let Ok(f) = frame
-                                    && let Some(data) = f.data_ref()
-                                    && let Ok(s) = std::str::from_utf8(data)
-                                {
-                                    tracing::info!("{}", s);
-                                }
-                            })
-                            .filter_map(|frame| async move {
-                                match frame {
-                                    Ok(f) => f.into_data().ok(),
-                                    Err(e) => {
-                                        tracing::error!("SSE 流读取错误: {}", e);
-                                        None
-                                    }
-                                }
-                            })
-                            .map(Ok::<bytes::Bytes, std::convert::Infallible>),
-                    )
-                        as Pin<
-                            Box<
-                                dyn Stream<Item = Result<bytes::Bytes, std::convert::Infallible>>
-                                    + Send,
-                            >,
-                        >
-                };
+                tracing::info!("⏭️ 直接透传 Anthropic 格式 SSE 流");
+                let stream = BodyStream::new(body)
+                    .inspect(move |frame| {
+                        if log_body
+                            && let Ok(f) = frame
+                            && let Some(data) = f.data_ref()
+                            && let Ok(s) = std::str::from_utf8(data)
+                        {
+                            tracing::info!("{}", s);
+                        }
+                    })
+                    .filter_map(|frame| async move {
+                        match frame {
+                            Ok(f) => f.into_data().ok(),
+                            Err(e) => {
+                                tracing::error!("SSE 流读取错误: {}", e);
+                                None
+                            }
+                        }
+                    })
+                    .map(Ok::<bytes::Bytes, std::convert::Infallible>);
 
                 res.body(ResBody::stream(stream));
                 return;
@@ -293,41 +245,6 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                 .and_then(|v| v.to_str().ok());
             let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
 
-            // 记录原始上游响应（用于调试）
-            if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() && cfg.log_res_body {
-                let raw_body_str = String::from_utf8_lossy(&body_bytes);
-                tracing::info!("=== 原始上游响应 (转换前) ===");
-                tracing::info!("{}", raw_body_str);
-                tracing::info!("=== 原始上游响应结束 ===");
-            }
-
-            // 如果 oai_api 启用，转换响应体格式：OpenAI Responses → Claude
-            let body_bytes = if matches!(mode, Mode::OpenAIResponses) && !body_bytes.is_empty() {
-                match openai_compat::responses_response_to_anthropic(
-                    &body_bytes,
-                    if selected_model.is_empty() {
-                        None
-                    } else {
-                        Some(&selected_model)
-                    },
-                ) {
-                    Ok(converted) => {
-                        tracing::debug!(
-                            "🔄 响应体格式转换: OpenAI Responses → Claude ({} bytes → {} bytes)",
-                            body_bytes.len(),
-                            converted.len()
-                        );
-                        converted
-                    }
-                    Err(e) => {
-                        tracing::warn!("响应体格式转换失败: {}，使用原始响应体", e);
-                        body_bytes
-                    }
-                }
-            } else {
-                body_bytes
-            };
-
             let body_str = String::from_utf8_lossy(&body_bytes);
 
             // 记录响应体
@@ -343,7 +260,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
                 if let Some(name) = name {
                     let name_str = name.as_str();
                     // 跳过 content-length，让 Salvo/hyper 自动计算
-                    // 因为响应体可能经过格式转换，大小会改变
+                    // 响应体已经过解压，长度可能变化
                     // 跳过 content-encoding，因为我们已经解压了响应体
                     if name_str != "content-length" && name_str != "content-encoding" {
                         res.headers_mut().insert(name, value);
@@ -553,7 +470,7 @@ pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respons
                 tracing::info!("=== Codex 非 SSE 响应: {} bytes ===", body_bytes.len());
             }
 
-            // Codex 代理不进行格式转换，直接透传响应
+            // Codex 代理直接透传响应
 
             // 构建响应
             res.status_code(

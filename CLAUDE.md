@@ -68,13 +68,6 @@ sh debug.sh
 - **`thinking_patch.rs`** - 思考模式补丁
 - **`utils.rs`** - 处理器工具函数
 
-### OpenAI 兼容层 (`src/gateway/openai_compat/`)
-- **`mod.rs`** - OpenAI 格式转换
-- **`request.rs`** - Claude → OpenAI 请求转换
-- **`response.rs`** - OpenAI → Claude 响应转换
-- **`tools.rs`** - 工具定义转换
-- **`media.rs`** - 媒体/内容处理
-
 ### 优化层 (`src/gateway/optimization/`)
 - **`mod.rs`** - 优化编排
 - **`detection.rs`** - 请求类型检测（配额检查、标题生成等）

@@ -23,14 +23,14 @@ use self::selector::UpstreamSelector;
 /// 工作模式枚举
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum Mode {
-    /// Claude CLI → Anthropic 格式接口，不进行任何格式转换
+    /// Anthropic 接口，供 `claude_proxy` 直通转发
     #[serde(rename = "anthropic")]
     #[default]
     AnthropicDirect,
-    /// Claude CLI → `OpenAI` Responses API 格式接口，需要进行请求/响应双向转换
+    /// `OpenAI` Responses 接口，供 `codex_proxy` 直通转发
     #[serde(rename = "openai_responses")]
     OpenAIResponses,
-    /// Claude CLI → `OpenAI` Chat Completions API 格式接口（预留）
+    /// `OpenAI` Chat Completions 接口（预留）
     #[serde(rename = "openai_chat")]
     OpenAIChat,
 }
@@ -54,7 +54,7 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
-    /// 上游模式：直通 Anthropic 或兼容 `OpenAI` Responses
+    /// 上游协议类型
     #[serde(default)]
     pub mode: Mode,
 }

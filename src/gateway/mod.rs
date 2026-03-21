@@ -1,5 +1,4 @@
 pub mod handler;
-pub mod openai_compat;
 pub mod optimization;
 pub mod service;
 
