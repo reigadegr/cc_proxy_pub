@@ -14,6 +14,7 @@ use crate::{
     config::{Config, Mode},
     gateway::{
         handler::{
+            content_filter::filter_content_strings,
             content_tag::{filter_messages_content, override_permission_error},
             system_prompt::filter_system_prompts,
             tool_desc::filter_tools_by_description,
@@ -54,6 +55,13 @@ pub async fn filter_req_body(body_bytes: &[u8]) -> Result<Bytes> {
     // 覆盖特定权限错误的 is_error 字段
     if !current.is_empty()
         && let Some(filtered) = override_permission_error(&current)
+    {
+        current = filtered;
+    }
+
+    // 从 messages[].content[].content 中移除指定字符串
+    if !current.is_empty()
+        && let Some(filtered) = filter_content_strings(&current)
     {
         current = filtered;
     }

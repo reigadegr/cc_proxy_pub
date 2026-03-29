@@ -1,3 +1,4 @@
+mod content_filter;
 mod content_tag;
 mod request;
 mod response;
@@ -64,9 +65,10 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
 
     if !body_bytes.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&body_bytes)
-        && cfg.log_req_body {
-            log_full_body(body_str);
-        }
+        && cfg.log_req_body
+    {
+        log_full_body(body_str);
+    }
 
     // 注入自定义系统提示词
     let body_bytes = if body_bytes.is_empty() {
