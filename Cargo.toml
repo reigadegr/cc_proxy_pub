@@ -26,7 +26,7 @@ anyhow = "1.0.102"
 futures-util = { version = "0.3.32", default-features = false, features = [
   "std",
 ] }
-arc-swap = "1.8.2"
+arc-swap = "1.9.0"
 bytes = "1.11.1"
 chrono = "0.4.44"
 flate2 = "1.1.9"
@@ -42,14 +42,14 @@ hyper-util = { version = "0.1.20", features = ["full"] }
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 notify = "8.2.0"
 rayon = "1.11.0"
-salvo = { version = "0.89.1", features = ["proxy", "affix-state"] }
+salvo = { version = "0.89.3", features = ["proxy", "affix-state"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 taplo = "0.14.0"
-tokio = { version = "1.49.0", features = ["full"] }
-toml = "1.0.3"
+tokio = { version = "1.50.0", features = ["full"] }
+toml = "1.1.0"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = [
+tracing-subscriber = { version = "0.3.23", features = [
   "local-time",
   "env-filter",
 ] }
