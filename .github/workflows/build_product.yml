@@ -1,0 +1,191 @@
+name: Release Build product
+
+on:
+  workflow_dispatch:
+    inputs:
+      TOOLCHAINS:
+        type: choice
+        description: "使用的工具链"
+        required: true
+        default: "stable"
+        options:
+          - "nightly"
+          - "stable"
+      TARGET:
+        type: choice
+        description: "编译的目标三元组"
+        required: true
+        default: "x86_64-unknown-linux-gnu"
+        options:
+          - "x86_64-unknown-linux-gnu"
+          - "aarch64-unknown-linux-gnu"
+          - "x86_64-unknown-linux-musl"
+          - "aarch64-unknown-linux-musl"
+          - "x86_64-pc-windows-msvc"
+          - "aarch64-pc-windows-msvc"
+          - "aarch64-apple-darwin"
+          - "x86_64-apple-darwin"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Optimize build performance
+  CARGO_INCREMENTAL: 0
+  TZ: Asia/Shanghai
+
+jobs:
+  # Build strategy check - determine build type based on trigger
+  build-check:
+    name: Build Strategy Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Debug Show Selected Inputs
+        run: |
+          echo "-----------------------"
+          echo "Selected TOOLCHAINS: ${{ github.event.inputs.TOOLCHAINS }}"
+          echo "Selected TARGET: ${{ github.event.inputs.TARGET }}"
+          echo "-----------------------"
+
+  # Build binaries
+  build-common:
+    name: Build common
+    needs: [build-check]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Platform builds
+          - os: ${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'macos' || 'ubuntu') }}-${{ contains(github.event.inputs.TARGET, 'linux') && '24.04' || contains(github.event.inputs.TARGET, 'apple') && 'latest' || contains(github.event.inputs.TARGET, 'aarch64') && '11' || 'latest' }}${{ contains(github.event.inputs.TARGET, 'aarch64') && !contains(github.event.inputs.TARGET, 'apple') && '-arm' || '' }}
+            target: ${{ github.event.inputs.TARGET }}
+    steps:
+      - name: "💾 Checkout repository"
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: "⚙️ show Cargo config"
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          [ -f ~/.cargo/config.toml ] && cat ~/.cargo/config.toml || echo "cfg not found"
+
+      - name: "🚀 Setup Rust environment"
+        uses: ./.github/actions/setup
+        with:
+          rust-version: ${{ github.event.inputs.TOOLCHAINS }}
+          target: ${{ matrix.target }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "⚙️ Configure Git"
+        shell: bash
+        run: |
+          git config --global user.name "reigadegr_action"
+          git config --global user.email "1145141919810@qq.com"
+
+      - name: "🔧 Setup TimeZone"
+        if: runner.os == 'Linux'
+        run: |
+          sudo -E rm -rf /etc/localtime
+          sudo -E ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+      - name: Optimize Memory Management
+        if: runner.os == 'Linux'
+        run: |
+          wget https://github.com/reigadegr/sun_action/raw/main/script/memopt.sh
+          nohup sh memopt.sh >/dev/null 2>&1 &
+
+      - name: Install Zig
+        if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@v2
+        
+      - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+        with:
+          mold-version: 2.40.4
+          make-default: false
+
+      - name: Install cargo-zigbuild
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/rust-cross/cargo-zigbuild
+          cd cargo-zigbuild
+          cargo add mimalloc --features no_thp,override,v3
+          wget https://github.com/reigadegr/rust_cli_action/raw/main/patchs/zigbuild_mimalloc.patch
+          patch -p2 -F 3 < zigbuild_mimalloc.patch
+          cargo update
+          cargo build -r
+          dd if=target/release/cargo-zigbuild of=./cargo-zigbuild
+          rm -rf target
+          sudo -E cp -af ./cargo-zigbuild ~/.cargo/bin/cargo-zigbuild
+          sudo -E chmod +x ~/.cargo/bin/cargo-zigbuild
+          ls ~/.cargo/bin
+          which cargo-zigbuild || true
+          cd  ..; rm -rf cargo-zigbuild
+
+      - name: "📥 Download github project code"
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/reigadegr/cc_proxy_pub common
+
+      - name: "⚙️ Reset flags"
+        shell: bash
+        run: |
+          cd common
+          rm -rf .cargo/ || echo "无需删除目录"
+          mkdir -p .cargo/
+          curl -L https://github.com/reigadegr/ccprs_action/raw/main/.cargo/config.toml -o .cargo/config.toml
+
+      - name: "🔨 Build common"
+        shell: bash
+        run: |
+          cd common
+          toolchain="${{ github.event.inputs.TOOLCHAINS }}"
+          platform="${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'apple' || 'linux') }}"
+          script_file="build_"$toolchain"_"$platform".sh"
+
+          url="https://github.com/reigadegr/ccprs_action/raw/main/script/$script_file"
+          echo "脚本直链: $url"
+          curl -L $url -o "$script_file"
+          cat "$script_file"; ls -al
+          is_musl="${{ contains(github.event.inputs.TARGET, 'musl') && 'true' || 'false' }}"
+          if [ "$is_musl" = "true" ]; then
+              sed -i 's/ build / zigbuild /g' "$script_file"
+              sed -i 's/,--relax//g' "$script_file"
+              sed -i 's/--pack-dyn-relocs=relr,//g' "$script_file"
+              sed -i '/--no-rosegment/d' "$script_file"
+          fi
+          
+          for i in "cc_proxy"; do
+              bin_name="$i"
+              sh "$script_file" "${{ matrix.target }}" "$bin_name" || true
+    
+              is_windows="${{ contains(github.event.inputs.TARGET, 'windows') && 'true' || 'false' }}"
+              if [ "$is_windows" = "true" ]; then
+                  bin_name=$bin_name.exe
+              fi
+              file="$(find . -name "$bin_name")"
+              echo "$(realpath $file)"
+              mkdir -p ../${{ github.event.inputs.TARGET }}_module || echo "已有默认目录"
+              dd if=./target/"${{ matrix.target }}"/release/$bin_name of=../"${{ matrix.target }}"_module/$bin_name
+          done
+          
+          git log > ../"${{ matrix.target }}"_module/commits.txt
+          curl -L https://github.com/reigadegr/ccprs_action/raw/main/config.toml -o ../"${{ matrix.target }}"_module/config.toml
+
+      - name: "📤 Upload to GitHub artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.TARGET }}_ccprs
+          path: ${{ matrix.target }}_module/*
+          retention-days: 3
