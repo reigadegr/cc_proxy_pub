@@ -1,13 +1,12 @@
-# 🚀 CC Proxy
+# ✂️ CliReqRefiner
 
 <div align="center">
 
-**专为 Claude Code CLI 打造的高性能 AI API 代理网关**
+**High-Performance Request Body Refiner for AI Coding Tools (Claude Code, Codex, etc.)**
 
-多上游负载均衡 · 智能本地优化 · 热配置重载 · 专为 Claude Code 优化
+Request Body Refining · Multi-Upstream Load Balancing · Hot Config Reload · Token Cost Reduction
 
 [![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://www.rust-lang.org)
-[![Claude](https://img.shields.io/badge/Claude-Code_CLI-purple.svg)](https://claude.com/claude-code)
 [![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 [![Cross-platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/rust-lang/rust)
@@ -16,76 +15,85 @@
 
 ---
 
-## 📖 关于
+## 📖 About
 
-**CC Proxy** 是专为 [Claude Code CLI](https://claude.com/claude-code) 设计的高性能 API 代理网关。
+**CliReqRefiner** is a high-performance API proxy designed for AI coding tools (Claude Code, Codex, etc.), with a focus on **refining request bodies** to reduce token consumption.
 
-它不仅能帮你：
-- 🌐 **接入多个上游服务商**，自动负载均衡
-- 💰 **降低 API 成本**，智能拦截非必要请求，并通过移除不必要的系统提示词与工具定义进一步降低 Token 消耗
-- ⚡ **提升响应速度**，本地处理部分优化请求
-- 🔧 **零停机配置**，修改配置立即生效
+It helps you:
+- ✂️ **Refine request bodies** — remove redundant system prompts, trim tool definitions, optimize context structure
+- 🌐 **Connect multiple upstream providers** with automatic load balancing
+- 💰 **Reduce API costs** — smart interception of non-essential requests plus request body optimization
+- ⚡ **Speed up responses** — locally handle certain optimization requests
+- 🔧 **Zero-downtime config** — changes take effect immediately
 
-### 💡 为什么需要它？
+### 💡 Why do you need it?
 
-Claude Code CLI 在使用过程中会发送一些"探测性"请求（如配额检查、标题生成、建议模式等），这些请求虽然消耗 Token 但对实际开发帮助有限。CC Proxy 智能识别并拦截这些请求，直接返回本地 mock 响应，既保持了 Claude Code 的正常功能，又能显著降低 Token 消耗。
+AI coding tools (Claude Code, Codex, etc.) send "probing" requests during usage (e.g., quota checks, title generation, suggestion mode, etc.) that consume tokens but contribute little to actual development. CliReqRefiner smartly identifies and intercepts these requests, returning local mock responses directly — keeping the tools fully functional while significantly reducing token consumption.
 
-此外，CC Proxy 还能通过**精简系统提示词和工具定义**来进一步降低 Token 消耗。在实际使用中，Claude Code 发送的请求往往包含大量预设的系统提示词和工具定义，这些内容在每个请求中都会重复出现，占用大量 Token。CC Proxy 可以在转发请求时：
-- 📝 **移除冗余的系统提示词**，保留核心指令
-- 🔧 **精简工具定义**，仅保留必要的工具描述
-- 📊 **优化上下文结构**，减少重复信息
+Furthermore, CliReqRefiner **refines system prompts and tool definitions** to further reduce token usage. In practice, requests sent by AI coding tools often contain a large number of preset system prompts and tool definitions that are repeated in every request, consuming a significant amount of tokens. CliReqRefiner can:
+- 📝 **Remove redundant system prompts**, keeping only core instructions
+- 🔧 **Trim tool definitions**, keeping only essential tool descriptions
+- 📊 **Optimize context structure**, reducing duplicate information
 
-这种双重优化策略使得 CC Proxy 能够在保持功能完整性的同时，最大程度地降低 API 调用成本。
-
----
-
-## ✨ 功能特性
-
-### 🔄 多上游负载均衡
-
-- 支持配置多个 upstream 服务提供商
-- **双层轮询策略**：先在 upstream 之间轮询，再在每个 upstream 的 API keys 之间轮询
-- 自动处理 API key 轮换，最大化请求分发
-
-### 🔥 热配置重载
-
-- 配置文件修改后**自动热重载**，无需重启服务
-- 使用 `notify` crate 实现跨平台文件监听
-- 配置变更时平滑切换，不中断服务
-
-### ⚡ 本地优化拦截
-
-智能识别并本地处理特定请求，减少上游调用：
-
-| 优化项 | 说明 |
-|:-------|:------|
-| 🔍 **Quota 检查拦截** | 对配额探测请求返回本地 mock 响应 |
-| 📝 **快速前缀检测** | 识别并提取命令前缀（如 `git commit`） |
-| 📋 **标题生成跳过** | 对标题生成请求返回默认响应 |
-| 💡 **建议模式跳过** | 对建议模式请求返回空响应 |
-| 📂 **文件路径提取** | 从命令输出中提取文件路径 |
-| 📊 **历史分析跳过** | 对历史分析请求返回简化响应 |
-
-### 📊 请求统计与监控
-
-- 实时统计请求次数和 Token 消耗
-- 区分用户输入 Token、历史上下文 Token、助手回复 Token
-- 计算 Token 浪费比，帮助优化使用成本
+This dual optimization strategy allows CliReqRefiner to minimize API call costs while maintaining full functionality.
 
 ---
 
-## 🚀 快速开始
+## ✨ Features
 
-### 🎯 配置 Claude Code CLI
+### ✂️ Request Body Refining (Core)
 
-在你的 Claude Code CLI 配置中设置 API 端点：
+The core feature of CliReqRefiner — refining request bodies before forwarding to upstream:
+- 📝 **System prompt optimization** — remove redundant system prompts, keep core instructions only
+- 🔧 **Tool definition trimming** — slim down verbose tool descriptions
+- 📊 **Context structure optimization** — reduce duplicate information across requests
+- 🎯 **Granular control** — enable/disable each optimization independently via config
+
+### 🔥 Hot Config Reload
+
+- **Auto hot reload** when config file changes — no restart needed
+- Cross-platform file watching via `notify` crate
+- Smooth config switching without service interruption
+
+### ⚡ Local Optimization Interception
+
+Smart identification and local handling of specific requests to reduce upstream calls:
+
+| Optimization | Description |
+|:-------------|:------------|
+| 🔍 **Quota check interception** | Return local mock response for quota probe requests |
+| 📝 **Fast prefix detection** | Identify and extract command prefixes (e.g., `git commit`) |
+| 📋 **Title generation skip** | Return default response for title generation requests |
+| 💡 **Suggestion mode skip** | Return empty response for suggestion mode requests |
+| 📂 **File path extraction** | Extract file paths from command output |
+| 📊 **Historical analysis skip** | Return simplified response for history analysis requests |
+
+### 🔄 Multi-Upstream Load Balancing
+
+- Support multiple upstream service providers
+- **Dual-layer round-robin**: round-robin between upstreams, then round-robin between API keys within each upstream
+- Automatic API key rotation for maximum request distribution
+
+### 📊 Request Statistics & Monitoring
+
+- Real-time request count and token consumption statistics
+- Distinguish between user input tokens, context tokens, and assistant response tokens
+- Calculate token waste ratio to help optimize usage costs
+
+---
+
+## 🚀 Quick Start
+
+### 🎯 Configure Claude Code CLI
+
+Set the API endpoint in your Claude Code CLI config:
 
 ```bash
-# 方法 1: 环境变量
+# Method 1: Environment variable
 export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
 ```
 
-或者在 `~/.claude/settings.json` 中这样配置：
+Or in `~/.claude/settings.json`:
 
 ```json
 {
@@ -96,51 +104,49 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
 }
 ```
 
-其中：
+Where:
+- `ANTHROPIC_BASE_URL` should point to `http://127.0.0.1:9066/claude`
+- `ANTHROPIC_AUTH_TOKEN` can be set to anything — CliReqRefiner overrides it when forwarding
 
-- `ANTHROPIC_BASE_URL` 需要指向 `http://127.0.0.1:9066/claude`
-- `ANTHROPIC_AUTH_TOKEN` 配置成什么都无所谓，本工具转发时会覆盖该值
-
-### 📦 构建项目
+### 📦 Build
 
 ```bash
-# Debug 模式
+# Debug mode
 sh build_native_stable.sh
 
-# Release 模式（推荐，用于生产）
+# Release mode (recommended for production)
 sh build_native_stable.sh r
 ```
 
-### ⚙️ 配置
+### ⚙️ Configuration
 
-编辑 `config.toml`：
+Edit `config.toml`:
 
 ```toml
-# 负载均衡配置示例
-# upstream可以写很多组，api_keys可以写很多个
-# 负载均衡策略：先轮询选择 upstream，再轮询选择 api_key
-# 修改立即生效，如果不生效请反馈
+# Load balancing configuration example
+# You can configure multiple upstreams with multiple API keys each
+# Strategy: round-robin between upstreams, then round-robin between API keys
+# Changes take effect immediately
 
-# 是否打印请求体
+# Whether to print request body
 log_req_body = false
-# 是否打印响应体
+# Whether to print response body
 log_res_body = false
 
-# Upstream 1: 智谱 AI Anthropic 兼容接口
+# Upstream 1
 [[upstream]]
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
-# mode 默认为 "anthropic"，直接透传 Anthropic 格式
-# 如需使用 OpenAI Responses 格式，设置 mode = "openai_responses"
+# mode defaults to "anthropic" — pass through Anthropic format directly
+# For OpenAI Responses format, set mode = "openai_responses"
 
-# Upstream 2: 可配置更多 upstream 实现负载均衡
+# Upstream 2: add more upstreams for load balancing
 # [[upstream]]
 # endpoint = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
-# mode = "anthropic"  # 可选: "anthropic" | "openai_responses" | "openai_chat"
-# openai_chat 暂未适配
+# mode = "anthropic"  # Options: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]
 enable_network_probe_mock = true
@@ -152,80 +158,90 @@ enable_filepath_extraction_mock = true
 
 ```
 
-### ▶️ 测试运行
+### ▶️ Run
 
 ```bash
-# 使用默认配置 (config.toml)
+# Use default config (config.toml)
 cargo r
 
-# 指定配置文件
+# Specify config file
 cargo r /path/to/config.toml
 ```
 
-服务默认监听 `0.0.0.0:9066`。
+Service listens on `0.0.0.0:9066` by default.
 
 ---
 
-## 📖 配置说明
+## 📖 Configuration Reference
 
-### 🔌 upstream 配置
+### 🔌 Upstream Config
 
-| 字段 | 类型 | 说明 |
-|:-----|:------|:------|
-| `endpoint` | `String` | 上游 API 地址 |
-| `model` | `String` | 强制使用的模型名称 |
-| `api_keys` | `Vec<String>` | API 密钥列表，支持多个 key 负载均衡 |
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `endpoint` | `String` | Upstream API address |
+| `model` | `String` | Model name to enforce |
+| `api_keys` | `Vec<String>` | API key list — supports multiple keys for load balancing |
 
-### ⚙️ optimizations 配置
+### ⚙️ Optimizations Config
 
-| 字段 | 类型 | 默认值 | 说明 |
-|:-----|:------|:-------|:------|
-| `enable_network_probe_mock` | `bool` | `true` | 拦截配额探测请求 |
-| `enable_fast_prefix_detection` | `bool` | `true` | 快速前缀检测优化 |
-| `enable_historical_analysis_mock` | `bool` | `true` | 跳过历史分析请求 |
-| `enable_title_generation_skip` | `bool` | `true` | 跳过标题生成请求 |
-| `enable_suggestion_mode_skip` | `bool` | `true` | 跳过建议模式请求 |
-| `enable_filepath_extraction_mock` | `bool` | `true` | 文件路径提取优化 |
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `enable_network_probe_mock` | `bool` | `true` | Intercept quota probe requests |
+| `enable_fast_prefix_detection` | `bool` | `true` | Fast prefix detection optimization |
+| `enable_historical_analysis_mock` | `bool` | `true` | Skip historical analysis requests |
+| `enable_title_generation_skip` | `bool` | `true` | Skip title generation requests |
+| `enable_suggestion_mode_skip` | `bool` | `true` | Skip suggestion mode requests |
+| `enable_filepath_extraction_mock` | `bool` | `true` | File path extraction optimization |
 
 ---
 
-## 🏗️ 工作原理
+## 🏗️ How It Works
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│   Client    │────▶│  CC Proxy    │────▶│  Upstream 1     │
+│   Client    │────▶│CliReqRefiner │────▶│  Upstream 1     │
 │             │     │              │     │  (API Key 1)    │
-│             │     │  🔄 负载均衡  │     │  (API Key 2)    │
-│             │     │              ├────▶│  Upstream 2     │
-│             │     │  ⚡ 本地优化  │     │  (API Key 1)    │
-│             │     │  📊 Token统计 │     │  ...            │
+│             │     │  ✂️ Request  │     │  (API Key 2)    │
+│             │     │    Refining  │     ├─────────────────┤
+│             │     │  🔄 Load     │────▶│  Upstream 2     │
+│             │     │    Balance   │     │  (API Key 1)    │
+│             │     │  ⚡ Local    │     │  ...            │
+│             │     │    Optimize  │     │                 │
+│             │     │  📊 Token    │     │                 │
+│             │     │    Stats     │     │                 │
 └─────────────┘     └──────────────┘     └─────────────────┘
 ```
 
 ---
 
-## 🛠️ 技术栈
+## 🛠️ Tech Stack
 
-| 技术 | 说明 |
-|:-----|:------|
-| **[Salvo](https://salvo.rs/)** | 高性能异步 Web 框架 |
-| **[Hyper](https://hyper.rs/)** | 成熟的 HTTP/1.1 & HTTP/2 实现 |
-| **[Tokio](https://tokio.rs/)** | Rust 异步运行时核心 |
-| **[arc-swap](https://docs.rs/arc-swap/)** | 无锁配置热更新 |
-| **[notify](https://docs.rs/notify/)** | 跨平台文件监听 |
-| **[mimalloc](https://github.com/microsoft/mimalloc)** | 高性能内存分配器 |
-
----
-
-## ⚡ 性能优化
-
-- ✅ Release 构建使用 LTO (Link Time Optimization)
-- ✅ 使用 mimalloc 替代默认分配器
-- ✅ HTTP 连接复用，减少连接开销
-- ✅ 无锁配置更新，避免锁竞争
+| Tech | Description |
+|:-----|:------------|
+| **[Salvo](https://salvo.rs/)** | High-performance async web framework |
+| **[Hyper](https://hyper.rs/)** | Mature HTTP/1.1 & HTTP/2 implementation |
+| **[Tokio](https://tokio.rs/)** | Rust async runtime core |
+| **[arc-swap](https://docs.rs/arc-swap/)** | Lock-free hot config reload |
+| **[notify](https://docs.rs/notify/)** | Cross-platform file watching |
+| **[mimalloc](https://github.com/microsoft/mimalloc)** | High-performance memory allocator |
 
 ---
 
-## 📄 许可证
+## ⚡ Performance
+
+- ✅ Release build with LTO (Link Time Optimization)
+- ✅ mimalloc replacing default allocator
+- ✅ HTTP connection reuse, reduced connection overhead
+- ✅ Lock-free config updates, no lock contention
+
+---
+
+## 🏘️ Community
+
+This project was originally shared on [LINUX DO](https://linux.do/) — 如果你是社区的朋友，欢迎来帖子下交流反馈，也期待有感兴趣的开发者一起完善这个项目 🤝
+
+---
+
+## 📄 License
 
 GNU General Public License v3.0 (GPLv3)

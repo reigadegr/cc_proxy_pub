@@ -1,6 +1,6 @@
 ## 项目概述
 
-**CC Proxy** 是专为 [Claude Code CLI](https://claude.com/claude-code) 设计的高性能 API 代理网关。
+**CliReqRefiner** 是面向 AI 编程工具（Claude Code、Codex 等）的高性能 API 代理网关，核心功能是请求体精炼优化。
 
 ### 核心特性
 - **多上游负载均衡** - 双层轮询策略（先选上游，再轮询 API key）
