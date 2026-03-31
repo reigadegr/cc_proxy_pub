@@ -1,5 +1,7 @@
 # ✂️ CliReqRefiner
 
+[![LINUX DO 社区](https://img.shields.io/badge/首发于-LINUX%20DO%20社区-000000?logo=linux&logoColor=white)](https://linux.do/)
+
 <div align="center">
 
 **高性能 AI 编码工具请求体精炼代理**
