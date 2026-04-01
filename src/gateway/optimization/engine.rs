@@ -1,11 +1,10 @@
 use serde_json::Value;
 
-use crate::config::OptimizationConfig;
-
 use super::{
     OptimizationResponse, command_utils, response_builder,
     rules::{OptimizationRuleMatch, detect_request_rule, detect_url_rule},
 };
+use crate::config::OptimizationConfig;
 
 pub fn try_local_optimization(
     body_bytes: &[u8],
