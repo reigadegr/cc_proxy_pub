@@ -167,7 +167,7 @@ jobs:
           platform="${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'apple' || contains(github.event.inputs.TARGET, 'android') && 'android' || 'linux') }}"
           script_file="build_"$toolchain"_"$platform".sh"
 
-          url="https://github.com/reigadegr/cli_req_refiner/raw/main/script/$script_file"
+          url="https://github.com/reigadegr/cli_req_refiner/raw/main/.github/action_script/$script_file"
           echo "脚本直链: $url"
           curl -L $url -o "$script_file"
           cat "$script_file"; ls -al
