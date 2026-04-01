@@ -17,6 +17,7 @@ on:
         required: true
         default: "x86_64-unknown-linux-gnu"
         options:
+          - "aarch64-linux-android"
           - "x86_64-unknown-linux-gnu"
           - "aarch64-unknown-linux-gnu"
           - "x86_64-unknown-linux-musl"
@@ -65,7 +66,7 @@ jobs:
       matrix:
         include:
           # Platform builds
-          - os: ${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'macos' || 'ubuntu') }}-${{ contains(github.event.inputs.TARGET, 'linux') && '24.04' || contains(github.event.inputs.TARGET, 'apple') && 'latest' || contains(github.event.inputs.TARGET, 'aarch64') && '11' || 'latest' }}${{ contains(github.event.inputs.TARGET, 'aarch64') && !contains(github.event.inputs.TARGET, 'apple') && '-arm' || '' }}
+          - os: ${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'macos' || 'ubuntu') }}-${{ contains(github.event.inputs.TARGET, 'linux') && '24.04' || contains(github.event.inputs.TARGET, 'apple') && 'latest' || contains(github.event.inputs.TARGET, 'aarch64') && '11' || 'latest' }}${{ contains(github.event.inputs.TARGET, 'aarch64') && !contains(github.event.inputs.TARGET, 'apple') && !contains(github.event.inputs.TARGET, 'android') && '-arm' || '' }}
             target: ${{ github.event.inputs.TARGET }}
     steps:
       - name: "💾 Checkout repository"
@@ -85,6 +86,18 @@ jobs:
           rust-version: ${{ github.event.inputs.TOOLCHAINS }}
           target: ${{ matrix.target }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup ndk and cargo ndk
+        if: runner.os == 'Linux'
+        run: |
+          ndk_url=$(wget -qO- https://github.com/android/ndk/releases/latest | grep -e 'https://dl.google.com/android/repository/android-ndk-.*-linux.zip' | sed -n 's/.*<a href="\([^"]*\)".*/\1/p')
+          wget -O ndk.zip $ndk_url -nv
+          mkdir ~/ndk_temp
+          unzip ndk.zip -d ~/ndk_temp 2>&1 > /dev/null
+          mv ~/ndk_temp/*/* ~/ndk_temp
+          wget https://github.com/reigadegr/thread-opt_builder/raw/main/libbinder_ndk.so
+          cp -f libbinder_ndk.so ~/ndk_temp/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/35/libbinder_ndk.so
+          cargo install cargo-ndk
 
       - name: "⚙️ Configure Git"
         shell: bash
@@ -136,7 +149,7 @@ jobs:
       - name: "📥 Download github project code"
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/reigadegr/cc_proxy_pub common
+          git clone --depth 1 https://github.com/reigadegr/cli_req_refiner common
 
       - name: "⚙️ Reset flags"
         shell: bash
@@ -144,17 +157,17 @@ jobs:
           cd common
           rm -rf .cargo/ || echo "无需删除目录"
           mkdir -p .cargo/
-          curl -L https://github.com/reigadegr/ccprs_action/raw/main/.cargo/config.toml -o .cargo/config.toml
+          curl -L https://github.com/reigadegr/cli_req_refiner/raw/main/.cargo/config.toml -o .cargo/config.toml
 
       - name: "🔨 Build common"
         shell: bash
         run: |
           cd common
           toolchain="${{ github.event.inputs.TOOLCHAINS }}"
-          platform="${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'apple' || 'linux') }}"
+          platform="${{ contains(github.event.inputs.TARGET, 'windows') && 'windows' || (contains(github.event.inputs.TARGET, 'apple') && 'apple' || contains(github.event.inputs.TARGET, 'android') && 'android' || 'linux') }}"
           script_file="build_"$toolchain"_"$platform".sh"
 
-          url="https://github.com/reigadegr/ccprs_action/raw/main/script/$script_file"
+          url="https://github.com/reigadegr/cli_req_refiner/raw/main/script/$script_file"
           echo "脚本直链: $url"
           curl -L $url -o "$script_file"
           cat "$script_file"; ls -al
@@ -166,7 +179,7 @@ jobs:
               sed -i '/--no-rosegment/d' "$script_file"
           fi
           
-          for i in "cc_proxy"; do
+          for i in "cli_req_refiner"; do
               bin_name="$i"
               sh "$script_file" "${{ matrix.target }}" "$bin_name" || true
     
@@ -181,11 +194,11 @@ jobs:
           done
           
           git log > ../"${{ matrix.target }}"_module/commits.txt
-          curl -L https://github.com/reigadegr/ccprs_action/raw/main/config.toml -o ../"${{ matrix.target }}"_module/config.toml
+          curl -L https://github.com/reigadegr/cli_req_refiner/raw/main/config.toml -o ../"${{ matrix.target }}"_module/config.toml
 
       - name: "📤 Upload to GitHub artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.TARGET }}_ccprs
+          name: ${{ github.event.inputs.TARGET }}_crr
           path: ${{ matrix.target }}_module/*
-          retention-days: 3
+          retention-days: 7
