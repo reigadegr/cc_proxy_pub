@@ -43,11 +43,36 @@ sh build_native_stable.sh r
 sh debug.sh
 ```
 
+## 提交说明
+
+提交时必须遵循约定式提交（Conventional Commits）。
+
+提交标题必须完整，并且标题使用中文。
+
+提交正文的第一行必须是提交标题的英文翻译。
+
+提交正文的主要内容必须采用中英逐句对照的写法，先中文，下一行对应英文，逐句成对出现。
+
+提交信息必须包含 DCO。
+
+DCO 中的姓名和邮箱必须从本地 git 配置获取，不得手写、不得使用占位符、不得替换为其他身份。
+
+获取 DCO 身份时，使用以下命令读取本地配置：
+
+```bash
+git config user.name
+git config user.email
+```
+
+生成 `Signed-off-by` 时，必须直接使用上面两个命令的输出结果。
+
 ## 补丁说明
 
 如果补丁工具提示打补丁失败，这有可能是误报。
 
-遇到这种情况时，请务必重新读取修改后的文件内容，再判断补丁是否真的失败；不要仅凭补丁工具的返回结果下结论。
+遇到这种情况时，请先执行 `git diff` 检查刚才的修改是否已经正确应用，因为大部分这类报错都是误报。
+
+在确认 `git diff` 后，再重新读取修改后的文件内容，判断补丁是否真的失败；不要仅凭补丁工具的返回结果下结论。
 
 ## 架构概览
 
@@ -90,10 +115,12 @@ log_res_body = false
 
 # Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
+enable = true
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
 # mode 默认为 "anthropic"，直接透传 Anthropic 格式
+# 设置 enable = false 可临时禁用该 upstream
 # 可选: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]

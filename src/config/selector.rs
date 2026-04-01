@@ -67,7 +67,7 @@ impl UpstreamSelector {
         let matching_count = self
             .upstreams
             .iter()
-            .filter(|upstream| upstream.mode == expected_mode)
+            .filter(|upstream| upstream.enable && upstream.mode == expected_mode)
             .count();
 
         if matching_count == 0 {
@@ -82,7 +82,7 @@ impl UpstreamSelector {
         let mut seen = 0;
         let (upstream_idx, upstream) =
             self.upstreams.iter().enumerate().find(|(_, upstream)| {
-                if upstream.mode != expected_mode {
+                if !upstream.enable || upstream.mode != expected_mode {
                     return false;
                 }
 
@@ -117,12 +117,14 @@ mod tests {
     fn create_test_upstreams() -> Vec<UpstreamConfig> {
         vec![
             UpstreamConfig {
+                enable: true,
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
                 mode: Mode::AnthropicDirect,
             },
             UpstreamConfig {
+                enable: true,
                 endpoint: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec![
@@ -166,18 +168,21 @@ mod tests {
     fn test_next_by_mode_round_robins_across_matching_upstreams() {
         let upstreams = vec![
             UpstreamConfig {
+                enable: true,
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string()],
                 mode: Mode::AnthropicDirect,
             },
             UpstreamConfig {
+                enable: true,
                 endpoint: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec!["key2a".to_string(), "key2b".to_string()],
                 mode: Mode::OpenAIResponses,
             },
             UpstreamConfig {
+                enable: true,
                 endpoint: "https://upstream3.example.com".to_string(),
                 model: "model3".to_string(),
                 api_keys: vec!["key3a".to_string(), "key3b".to_string()],
@@ -213,5 +218,50 @@ mod tests {
         assert_eq!(idx3, 2);
         assert_eq!(key3, "key3b");
         assert_eq!(mode3, Mode::OpenAIResponses);
+    }
+
+    #[test]
+    fn test_next_by_mode_skips_disabled_upstreams() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: false,
+                endpoint: "https://disabled.example.com".to_string(),
+                model: "disabled-model".to_string(),
+                api_keys: vec!["disabled-key".to_string()],
+                mode: Mode::OpenAIResponses,
+            },
+            UpstreamConfig {
+                enable: true,
+                endpoint: "https://enabled.example.com".to_string(),
+                model: "enabled-model".to_string(),
+                api_keys: vec!["enabled-key".to_string()],
+                mode: Mode::OpenAIResponses,
+            },
+        ];
+        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+
+        let (idx, endpoint, model, key, mode) = selector
+            .next_by_mode(Mode::OpenAIResponses)
+            .expect("应跳过禁用 upstream，选择启用项");
+
+        assert_eq!(idx, 1);
+        assert_eq!(endpoint, "https://enabled.example.com");
+        assert_eq!(model, "enabled-model");
+        assert_eq!(key, "enabled-key");
+        assert_eq!(mode, Mode::OpenAIResponses);
+    }
+
+    #[test]
+    fn test_next_by_mode_returns_none_when_all_matching_upstreams_disabled() {
+        let upstreams = vec![UpstreamConfig {
+            enable: false,
+            endpoint: "https://disabled.example.com".to_string(),
+            model: "disabled-model".to_string(),
+            api_keys: vec!["disabled-key".to_string()],
+            mode: Mode::OpenAIResponses,
+        }];
+        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+
+        assert!(selector.next_by_mode(Mode::OpenAIResponses).is_none());
     }
 }

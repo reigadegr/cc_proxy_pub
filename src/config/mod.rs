@@ -46,6 +46,9 @@ pub struct AtomicConfig {
 /// 上游提供商配置
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpstreamConfig {
+    /// 是否启用该上游；关闭后会在选择阶段被跳过
+    #[serde(default = "default_true")]
+    pub enable: bool,
     /// 上游主机地址+路径
     pub endpoint: String,
     /// 模型名称（覆盖请求体中的 model 字段）
@@ -113,6 +116,7 @@ const fn default_model() -> String {
 impl Default for UpstreamConfig {
     fn default() -> Self {
         Self {
+            enable: default_true(),
             endpoint: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
@@ -167,13 +171,19 @@ impl AtomicConfig {
         });
 
         info!("✅ 配置已加载:");
-        info!("upstream 数量: {} 个", config.upstream.len());
+        info!(
+            "upstream 数量: {} 个（启用 {} 个）",
+            config.upstream.len(),
+            enabled_upstream_count(&config.upstream)
+        );
         for (i, up) in config.upstream.iter().enumerate() {
             info!(
-                "  [{}] endpoint={}, model={}, api_keys={} 个",
+                "  [{}] enable={}, endpoint={}, model={}, mode={:?}, api_keys={} 个",
                 i,
+                up.enable,
                 up.endpoint,
                 up.model,
+                up.mode,
                 up.api_keys.len()
             );
             for (j, key) in up.api_keys.iter().enumerate() {
@@ -259,16 +269,20 @@ impl AtomicConfig {
                     info!("✅ 配置已更新:");
                     if upstream_changed {
                         info!(
-                            "upstream: {} 个 -> {} 个",
+                            "upstream: {} 个（启用 {} 个） -> {} 个（启用 {} 个）",
                             old.upstream.len(),
-                            new_config.upstream.len()
+                            enabled_upstream_count(&old.upstream),
+                            new_config.upstream.len(),
+                            enabled_upstream_count(&new_config.upstream)
                         );
                         for (i, up) in new_config.upstream.iter().enumerate() {
                             info!(
-                                "  [{}] endpoint={}, model={}, api_keys={} 个",
+                                "  [{}] enable={}, endpoint={}, model={}, mode={:?}, api_keys={} 个",
                                 i,
+                                up.enable,
                                 up.endpoint,
                                 up.model,
+                                up.mode,
                                 up.api_keys.len()
                             );
                         }
@@ -307,7 +321,11 @@ impl AtomicConfig {
                     info!("ℹ️ 配置文件内容未变化");
                 }
 
-                info!("📋 当前配置: upstream={} 个", new_config.upstream.len());
+                info!(
+                    "📋 当前配置: upstream={} 个（启用 {} 个）",
+                    new_config.upstream.len(),
+                    enabled_upstream_count(&new_config.upstream)
+                );
             }
             Err(e) => {
                 error!("❌ 配置重载失败: {}", e);
@@ -357,5 +375,33 @@ impl AtomicConfig {
             // 永久挂起线程，保 watcher 不被 drop
             std::thread::park();
         });
+    }
+}
+
+fn enabled_upstream_count(upstreams: &[UpstreamConfig]) -> usize {
+    upstreams.iter().filter(|upstream| upstream.enable).count()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::{Config, Mode};
+
+    #[test]
+    fn upstream_enable_defaults_to_true() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                endpoint = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                mode = "anthropic"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.upstream.len(), 1);
+        assert!(config.upstream[0].enable);
+        assert_eq!(config.upstream[0].mode, Mode::AnthropicDirect);
     }
 }

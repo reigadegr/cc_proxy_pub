@@ -139,14 +139,17 @@ log_res_body = false
 
 # 上游 1
 [[upstream]]
+enable = true
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
 # mode 默认为 "anthropic" — 直接透传 Anthropic 格式
+# 设置 enable = false 可临时禁用该上游
 # 如需 OpenAI Responses 格式，设置 mode = "openai_responses"
 
 # 上游 2：添加更多上游实现负载均衡
 # [[upstream]]
+# enable = true
 # endpoint = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]

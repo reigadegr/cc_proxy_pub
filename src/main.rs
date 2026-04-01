@@ -43,12 +43,18 @@ async fn main() -> anyhow::Result<()> {
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
     let cfg = atomic_config.get();
-    info!("Initial config: {} upstream(s)", cfg.upstream.len());
+    info!(
+        "Initial config: {} upstream(s), {} enabled",
+        cfg.upstream.len(),
+        cfg.upstream.iter().filter(|up| up.enable).count()
+    );
     for (i, up) in cfg.upstream.iter().enumerate() {
         info!(
-            "  [{}] endpoint={}, api_keys={}",
+            "  [{}] enable={}, endpoint={}, mode={:?}, api_keys={}",
             i,
+            up.enable,
             up.endpoint,
+            up.mode,
             up.api_keys.len()
         );
     }
