@@ -131,33 +131,12 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/rust-cross/cargo-zigbuild
-          cd cargo-zigbuild
-          cargo add mimalloc --features no_thp,override,v3
-          wget https://github.com/reigadegr/rust_cli_action/raw/main/patchs/zigbuild_mimalloc.patch
-          patch -p2 -F 3 < zigbuild_mimalloc.patch
-          cargo update
-          cargo build -r
-          dd if=target/release/cargo-zigbuild of=./cargo-zigbuild
-          rm -rf target
-          sudo -E cp -af ./cargo-zigbuild ~/.cargo/bin/cargo-zigbuild
-          sudo -E chmod +x ~/.cargo/bin/cargo-zigbuild
-          ls ~/.cargo/bin
-          which cargo-zigbuild || true
-          cd  ..; rm -rf cargo-zigbuild
+          cargo install cargo-zigbuild
 
       - name: "📥 Download github project code"
         shell: bash
         run: |
           git clone --depth 1 https://github.com/reigadegr/cli_req_refiner common
-
-      - name: "⚙️ Reset flags"
-        shell: bash
-        run: |
-          cd common
-          rm -rf .cargo/ || echo "无需删除目录"
-          mkdir -p .cargo/
-          curl -L https://github.com/reigadegr/cli_req_refiner/raw/main/.cargo/config.toml -o .cargo/config.toml
 
       - name: "🔨 Build common"
         shell: bash
