@@ -13,7 +13,7 @@ const CONTENT_STR_REMOVE: &[&str] = &[
 /// 检查每个元素的 content 字段，若包含指定字符串则将其消除。
 ///
 /// JSON 路径: `messages[].content[].content`
-pub fn filter_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
+pub fn sanitize_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
     if CONTENT_STR_REMOVE.is_empty() {
         return None;
     }
@@ -57,4 +57,8 @@ pub fn filter_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
     }
 
     to_vec(&json).ok().map(Into::into)
+}
+
+pub fn filter_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
+    sanitize_content_strings(body_bytes)
 }

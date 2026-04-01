@@ -33,7 +33,7 @@ fn should_remove_content(text: &str) -> bool {
 /// - <local-command-caveat>...</local-command-caveat>
 ///
 /// 这些内容占用大量 tokens 但对模型无用，此函数将其移除。
-pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+pub fn strip_messages_content_tags(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = from_slice::<Value>(body_bytes).ok()?;
 
     let messages = json.get_mut("messages")?.as_array_mut()?;
@@ -87,11 +87,15 @@ pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     to_vec(&json).ok().map(Into::into)
 }
 
+pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    strip_messages_content_tags(body_bytes)
+}
+
 /// 覆盖特定错误的 `is_error` 字段
 ///
 /// 当 role 为 "user" 的消息中，content 数组包含特定权限错误时，
 /// 强制将 `is_error` 改为 false，避免触发不必要的错误处理。
-pub fn override_permission_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+pub fn clear_permission_denied_is_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = from_slice::<Value>(body_bytes).ok()?;
 
     let messages = json.get_mut("messages")?.as_array_mut()?;
@@ -138,4 +142,8 @@ pub fn override_permission_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     }
 
     to_vec(&json).ok().map(Into::into)
+}
+
+pub fn override_permission_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    clear_permission_denied_is_error(body_bytes)
 }

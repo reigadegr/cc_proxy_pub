@@ -1,107 +1,11 @@
 mod command_utils;
 mod detection;
+mod engine;
 mod response_builder;
+mod rules;
 
+pub use engine::try_local_optimization;
 pub use response_builder::OptimizationResponse;
-use serde_json::Value;
-
-use crate::config::OptimizationConfig;
-
-pub fn try_local_optimization(
-    body_bytes: &[u8],
-    request_url: &str,
-    flags: &OptimizationConfig,
-) -> Option<OptimizationResponse> {
-    if flags.enable_network_probe_mock && detection::is_count_tokens_url(request_url) {
-        tracing::info!("Optimization: Intercepted count_tokens URL");
-        return response_builder::build_text_response(
-            "unknown-model",
-            "Max tokens passed.",
-            10,
-            5,
-            "max_tokens_mock",
-        );
-    }
-
-    let request: Value = serde_json::from_slice(body_bytes).ok()?;
-
-    if flags.enable_network_probe_mock && detection::is_quota_check_request(&request) {
-        tracing::info!("Optimization: Intercepted and mocked quota probe");
-        return response_builder::build_text_response(
-            "unknown-model",
-            "Quota check passed.",
-            10,
-            5,
-            "quota_probe_mock",
-        );
-    }
-
-    if flags.enable_historical_analysis_mock && detection::is_historical_analysis_request(&request)
-    {
-        tracing::info!("Optimization: Skipped historical analysis request");
-        return response_builder::build_text_response(
-            "unknown-model",
-            "historical analysis passed.",
-            100,
-            5,
-            "historical_analysis_skip",
-        );
-    }
-
-    if flags.enable_fast_prefix_detection
-        && let Some(command) = detection::detect_prefix_command(&request)
-    {
-        tracing::info!("Optimization: Handled fast prefix detection");
-        let prefix = command_utils::extract_command_prefix(command.as_str());
-        return response_builder::build_text_response(
-            "unknown-model",
-            prefix.as_str(),
-            100,
-            5,
-            "fast_prefix_detection",
-        );
-    }
-
-    if flags.enable_title_generation_skip && detection::is_title_generation_request(&request) {
-        tracing::info!("Optimization: Skipped title generation request");
-        return response_builder::build_text_response(
-            "unknown-model",
-            "Conversation",
-            100,
-            5,
-            "title_generation_skip",
-        );
-    }
-
-    if flags.enable_suggestion_mode_skip && detection::is_suggestion_mode_request(&request) {
-        tracing::info!("Optimization: Skipped suggestion mode request");
-        return response_builder::build_text_response(
-            "unknown-model",
-            "",
-            100,
-            1,
-            "suggestion_mode_skip",
-        );
-    }
-
-    if flags.enable_filepath_extraction_mock
-        && let Some((command, output)) = detection::detect_filepath_extraction_request(&request)
-    {
-        tracing::info!("Optimization: Mocked filepath extraction request");
-        let filepaths =
-            command_utils::extract_filepaths_from_command(command.as_str(), output.as_str());
-
-        return response_builder::build_text_response(
-            "unknown-model",
-            filepaths.as_str(),
-            100,
-            10,
-            "filepath_extraction_mock",
-        );
-    }
-
-    None
-}
 
 #[cfg(test)]
 mod tests {

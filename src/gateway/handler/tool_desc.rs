@@ -21,7 +21,7 @@ fn should_remove_tool_by_description(description: &str) -> bool {
 }
 
 /// 过滤 tools 数组中 description 命中关键词的元素
-pub fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+pub fn prune_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = from_slice::<Value>(body_bytes).ok()?;
 
     let tools = json.get_mut("tools")?.as_array_mut()?;
@@ -43,4 +43,8 @@ pub fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     }
 
     to_vec(&json).ok().map(Into::into)
+}
+
+pub fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    prune_tools_by_description(body_bytes)
 }

@@ -1,5 +1,6 @@
 pub mod handler;
 pub mod optimization;
+pub mod proxy;
 pub mod service;
 
 use std::sync::{Arc, atomic::AtomicU64};

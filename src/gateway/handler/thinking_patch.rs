@@ -60,7 +60,7 @@ fn patch_message_reasoning_content(message: &mut Value, fallback_thinking: Optio
 /// - 优先从 message.content[type=thinking].thinking 提取文本
 /// - 给 `assistant` 消息补上/替换 `reasoning_content`（缺失或为占位符时）
 /// - 给 `messages` 最后一个元素补上/替换 `reasoning_content`（缺失或为占位符时），不区分 role
-pub fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+pub fn patch_thinking_reasoning_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
     let mut json = from_slice::<Value>(body_bytes).ok()?;
 
     // 检查是否启用了 thinking 模式
@@ -102,4 +102,8 @@ pub fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Byt
     } else {
         None
     }
+}
+
+pub fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
+    patch_thinking_reasoning_content(body_bytes)
 }
