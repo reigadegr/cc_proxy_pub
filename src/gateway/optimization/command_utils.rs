@@ -44,7 +44,7 @@ pub fn extract_command_prefix(command: &str) -> String {
     }
 }
 
-pub fn extract_filepaths_from_command(command: &str, _output: &str) -> String {
+pub fn extract_filepaths_from_command(command: &str) -> String {
     let parts = split_shell_words(command);
     if parts.is_empty() {
         return String::from(EMPTY_FILEPATHS_XML);
@@ -216,19 +216,19 @@ mod tests {
     #[test]
     fn test_extract_filepaths_from_command() {
         assert_eq!(
-            extract_filepaths_from_command("ls -la", ""),
+            extract_filepaths_from_command("ls -la"),
             "<filepaths>\n</filepaths>"
         );
         assert_eq!(
-            extract_filepaths_from_command("cat -n foo.txt bar.md", ""),
+            extract_filepaths_from_command("cat -n foo.txt bar.md"),
             "<filepaths>\nfoo.txt\nbar.md\n</filepaths>"
         );
         assert_eq!(
-            extract_filepaths_from_command("grep pattern file1.txt file2.txt", ""),
+            extract_filepaths_from_command("grep pattern file1.txt file2.txt"),
             "<filepaths>\nfile1.txt\nfile2.txt\n</filepaths>"
         );
         assert_eq!(
-            extract_filepaths_from_command("grep -e pattern file.txt", ""),
+            extract_filepaths_from_command("grep -e pattern file.txt"),
             "<filepaths>\nfile.txt\n</filepaths>"
         );
     }

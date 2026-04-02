@@ -30,7 +30,7 @@ pub async fn claude_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respon
 
 #[handler]
 pub async fn codex_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let (config, _stats, client) = match setup_handler_state(depot) {
+    let (config, _, client) = match setup_handler_state(depot) {
         Ok(state) => state,
         Err(e) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);

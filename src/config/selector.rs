@@ -43,6 +43,14 @@ impl UpstreamSelector {
         }
     }
 
+    /// 获取指定 mode 当前可用的 upstream 数量
+    pub fn matching_count_by_mode(&self, expected_mode: Mode) -> usize {
+        self.upstreams
+            .iter()
+            .filter(|upstream| upstream.enable && upstream.mode.supports(expected_mode))
+            .count()
+    }
+
     /// 获取下一个匹配指定 mode 的 upstream 和对应的 `api_key`
     /// 双层轮询策略：
     /// 1. 外层：按 round-robin 选择 upstream
@@ -64,11 +72,7 @@ impl UpstreamSelector {
             return None;
         }
 
-        let matching_count = self
-            .upstreams
-            .iter()
-            .filter(|upstream| upstream.enable && upstream.mode.supports(expected_mode))
-            .count();
+        let matching_count = self.matching_count_by_mode(expected_mode);
 
         if matching_count == 0 {
             return None;
@@ -149,14 +153,14 @@ mod tests {
         let upstreams = create_test_upstreams();
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (idx0, _ep0, _model0, key0, mode0) = selector
+        let (idx0, _, _, key0, mode0) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能选到 openai_responses upstream");
         assert_eq!(idx0, 1);
         assert_eq!(key0, "key2a");
         assert_eq!(mode0, Mode::OpenAIResponses);
 
-        let (idx1, _ep1, _model1, key1, mode1) = selector
+        let (idx1, _, _, key1, mode1) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能继续选到 openai_responses upstream");
         assert_eq!(idx1, 1);
@@ -305,5 +309,37 @@ mod tests {
         assert_eq!(responses_idx_1, 1);
         assert_eq!(responses_key_1, "responses-key");
         assert_eq!(responses_mode_1, Mode::OpenAIResponses);
+    }
+
+    #[test]
+    fn test_matching_count_by_mode_only_counts_enabled_matching_upstreams() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                endpoint: "https://anthropic.example.com".to_string(),
+                model: "anthropic-model".to_string(),
+                api_keys: vec!["anthropic-key".to_string()],
+                mode: vec![Mode::AnthropicDirect].into(),
+            },
+            UpstreamConfig {
+                enable: true,
+                endpoint: "https://shared.example.com".to_string(),
+                model: "shared-model".to_string(),
+                api_keys: vec!["shared-key".to_string()],
+                mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
+            },
+            UpstreamConfig {
+                enable: false,
+                endpoint: "https://disabled.example.com".to_string(),
+                model: "disabled-model".to_string(),
+                api_keys: vec!["disabled-key".to_string()],
+                mode: vec![Mode::OpenAIResponses].into(),
+            },
+        ];
+        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+
+        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 2);
+        assert_eq!(selector.matching_count_by_mode(Mode::OpenAIResponses), 1);
+        assert_eq!(selector.matching_count_by_mode(Mode::OpenAIChat), 0);
     }
 }

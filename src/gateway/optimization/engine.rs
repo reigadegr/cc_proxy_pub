@@ -70,9 +70,8 @@ fn build_response(rule_match: OptimizationRuleMatch) -> Option<OptimizationRespo
             1,
             "suggestion_mode_skip",
         ),
-        OptimizationRuleMatch::FilepathExtraction { command, output } => {
-            let filepaths =
-                command_utils::extract_filepaths_from_command(command.as_str(), output.as_str());
+        OptimizationRuleMatch::FilepathExtraction { command } => {
+            let filepaths = command_utils::extract_filepaths_from_command(command.as_str());
             response_builder::build_text_response(
                 "unknown-model",
                 filepaths.as_str(),

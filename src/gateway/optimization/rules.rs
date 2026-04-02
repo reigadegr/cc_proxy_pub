@@ -10,7 +10,7 @@ pub enum OptimizationRuleMatch {
     PrefixCommand { command: String },
     TitleGeneration,
     SuggestionMode,
-    FilepathExtraction { command: String, output: String },
+    FilepathExtraction { command: String },
 }
 
 impl OptimizationRuleMatch {
@@ -65,9 +65,9 @@ pub fn detect_request_rule(
     }
 
     if flags.enable_filepath_extraction_mock
-        && let Some((command, output)) = detection::detect_filepath_extraction_request(request)
+        && let Some(command) = detection::detect_filepath_extraction_request(request)
     {
-        return Some(OptimizationRuleMatch::FilepathExtraction { command, output });
+        return Some(OptimizationRuleMatch::FilepathExtraction { command });
     }
 
     None

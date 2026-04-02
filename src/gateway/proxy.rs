@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures_util::StreamExt;
-use http::Error as HttpError;
+use http::{Error as HttpError, HeaderName, HeaderValue};
 use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::{Request as HyperRequest, Response as HyperResponse, body::Incoming};
+use hyper::{
+    Request as HyperRequest, Response as HyperResponse, body::Incoming, http::response::Parts,
+};
 use salvo::{http::ResBody, prelude::*};
 
 use crate::{
-    config::{AtomicConfig, Config, Mode},
+    config::{AtomicConfig, Config, Mode, selector::UpstreamSelector},
     gateway::{
         HttpClient, RequestStats,
         handler::{
@@ -43,6 +45,34 @@ struct SelectedUpstream {
     model: String,
     api_key: String,
     mode: Mode,
+}
+
+struct FailedUpstreamResponse {
+    status: StatusCode,
+    headers: Vec<(Option<HeaderName>, HeaderValue)>,
+    body: Vec<u8>,
+    body_text: String,
+}
+
+enum UpstreamAttemptFailure {
+    Response(FailedUpstreamResponse),
+    Transport(String),
+}
+
+enum RetryLoopResult {
+    Forwarded,
+    Failed(UpstreamAttemptFailure),
+    NoSelection,
+}
+
+struct RetryContext<'a> {
+    req: &'a Request,
+    res: &'a mut Response,
+    client: &'a Arc<HttpClient>,
+    cfg: &'a Config,
+    selector: &'a UpstreamSelector,
+    body_bytes: &'a Bytes,
+    max_attempts: usize,
 }
 
 pub async fn handle_claude(
@@ -117,48 +147,139 @@ async fn run_proxy(
         req.headers(),
     );
 
-    let body_bytes = prepare_request_body(plan, body_bytes, &cfg, stats, req, res).await;
+    let body_bytes = prepare_request_body(plan, body_bytes, &cfg, stats, res).await;
     let Some(body_bytes) = body_bytes else {
         return;
     };
 
-    let Some(selected_upstream) = select_upstream(config, plan) else {
+    let Some(selector) = config.get_upstream_selector() else {
         tracing::error!("{}", plan.missing_upstream_message);
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
         return;
     };
 
-    log_selected_upstream(plan.kind, &selected_upstream);
+    let max_attempts = selector.matching_count_by_mode(plan.upstream_mode);
+    if max_attempts == 0 {
+        tracing::error!("{}", plan.missing_upstream_message);
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        return;
+    }
 
-    let body_bytes = apply_upstream_model(body_bytes, &selected_upstream.model);
-    let (upstream_url, host) =
-        make_proxy_url(&selected_upstream.endpoint, selected_upstream.mode, req);
-
-    let proxy_req = match build_proxy_request(
-        req,
-        &upstream_url,
-        host.as_ref(),
-        &selected_upstream.api_key,
-        body_bytes,
-    ) {
-        Ok(request) => request,
-        Err(error) => {
-            tracing::error!("Failed to build proxy request: {}", error);
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            return;
+    match try_upstreams(
+        plan,
+        RetryContext {
+            req,
+            res,
+            client,
+            cfg: &cfg,
+            selector: selector.as_ref(),
+            body_bytes: &body_bytes,
+            max_attempts,
+        },
+    )
+    .await
+    {
+        RetryLoopResult::Forwarded => {}
+        RetryLoopResult::Failed(UpstreamAttemptFailure::Response(failed_response)) => {
+            tracing::error!(
+                "{} after exhausting {} upstream attempt(s); returning last upstream response",
+                proxy_failure_label(plan.kind),
+                max_attempts
+            );
+            render_failed_upstream_response(res, failed_response);
         }
-    };
-
-    match client.request(proxy_req).await {
-        Ok(proxy_resp) => {
-            forward_proxy_response(plan.kind, proxy_resp, res, &cfg).await;
+        RetryLoopResult::Failed(UpstreamAttemptFailure::Transport(error_message)) => {
+            tracing::error!(
+                "{} after exhausting {} upstream attempt(s): {}",
+                proxy_failure_label(plan.kind),
+                max_attempts,
+                error_message
+            );
+            res.status_code(StatusCode::BAD_GATEWAY);
+            res.render("Bad Gateway");
         }
-        Err(error) => {
-            tracing::error!("{}: {}", proxy_failure_label(plan.kind), error);
+        RetryLoopResult::NoSelection => {
+            tracing::error!(
+                "{}: selector returned no upstream during retry loop",
+                proxy_failure_label(plan.kind)
+            );
             res.status_code(StatusCode::BAD_GATEWAY);
             res.render("Bad Gateway");
         }
     }
+}
+
+async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResult {
+    let mut last_failure = None;
+
+    for attempt in 1..=ctx.max_attempts {
+        let Some(selected_upstream) = select_upstream(ctx.selector, plan) else {
+            break;
+        };
+
+        log_selected_upstream(plan.kind, &selected_upstream, attempt, ctx.max_attempts);
+
+        let attempt_body = apply_upstream_model(ctx.body_bytes.clone(), &selected_upstream.model);
+        let (upstream_url, host) =
+            make_proxy_url(&selected_upstream.endpoint, selected_upstream.mode, ctx.req);
+
+        let proxy_req = match build_proxy_request(
+            ctx.req,
+            &upstream_url,
+            host.as_ref(),
+            &selected_upstream.api_key,
+            attempt_body,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                tracing::error!("Failed to build proxy request: {}", error);
+                ctx.res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+                return RetryLoopResult::Forwarded;
+            }
+        };
+
+        match ctx.client.request(proxy_req).await {
+            Ok(proxy_resp) => {
+                match forward_proxy_response(plan.kind, proxy_resp, ctx.res, ctx.cfg).await {
+                    Ok(()) => return RetryLoopResult::Forwarded,
+                    Err(UpstreamAttemptFailure::Response(failed_response)) => {
+                        log_failed_upstream_response(
+                            plan.kind,
+                            &selected_upstream,
+                            attempt,
+                            ctx.max_attempts,
+                            ctx.cfg.log_res_body,
+                            &failed_response,
+                        );
+                        last_failure = Some(UpstreamAttemptFailure::Response(failed_response));
+                    }
+                    Err(UpstreamAttemptFailure::Transport(error_message)) => {
+                        log_transport_failure(
+                            plan.kind,
+                            &selected_upstream,
+                            attempt,
+                            ctx.max_attempts,
+                            &error_message,
+                        );
+                        last_failure = Some(UpstreamAttemptFailure::Transport(error_message));
+                    }
+                }
+            }
+            Err(error) => {
+                let error_message = error.to_string();
+                log_transport_failure(
+                    plan.kind,
+                    &selected_upstream,
+                    attempt,
+                    ctx.max_attempts,
+                    &error_message,
+                );
+                last_failure = Some(UpstreamAttemptFailure::Transport(error_message));
+            }
+        }
+    }
+
+    last_failure.map_or_else(|| RetryLoopResult::NoSelection, RetryLoopResult::Failed)
 }
 
 async fn prepare_request_body(
@@ -166,7 +287,6 @@ async fn prepare_request_body(
     body_bytes: Bytes,
     cfg: &Config,
     stats: Option<&Arc<RequestStats>>,
-    _req: &Request,
     res: &mut Response,
 ) -> Option<Bytes> {
     let mut current = body_bytes;
@@ -212,8 +332,7 @@ async fn prepare_request_body(
     Some(current)
 }
 
-fn select_upstream(config: &Arc<AtomicConfig>, plan: ProxyPlan) -> Option<SelectedUpstream> {
-    let selector = config.get_upstream_selector()?;
+fn select_upstream(selector: &UpstreamSelector, plan: ProxyPlan) -> Option<SelectedUpstream> {
     let (index, endpoint, model, api_key, mode) = selector.next_by_mode(plan.upstream_mode)?;
 
     Some(SelectedUpstream {
@@ -225,16 +344,23 @@ fn select_upstream(config: &Arc<AtomicConfig>, plan: ProxyPlan) -> Option<Select
     })
 }
 
-fn log_selected_upstream(kind: ProxyKind, upstream: &SelectedUpstream) {
+fn log_selected_upstream(
+    kind: ProxyKind,
+    upstream: &SelectedUpstream,
+    attempt: usize,
+    total_attempts: usize,
+) {
     let prefix = match kind {
         ProxyKind::Claude => "🔄 选中的",
         ProxyKind::Codex => "🔄 Codex 代理选中的",
     };
 
     tracing::info!(
-        "{} Upstream[{}]: endpoint={}, model={}, api_key: {}***, mode={:?}",
+        "{} Upstream[{}] (attempt {}/{}): endpoint={}, model={}, api_key: {}***, mode={:?}",
         prefix,
         upstream.index,
+        attempt,
+        total_attempts,
         upstream.endpoint,
         upstream.model,
         upstream.api_key.chars().take(8).collect::<String>(),
@@ -279,8 +405,14 @@ async fn forward_proxy_response(
     proxy_resp: HyperResponse<Incoming>,
     res: &mut Response,
     cfg: &Config,
-) {
+) -> Result<(), UpstreamAttemptFailure> {
     let (parts, body) = proxy_resp.into_parts();
+    if should_retry_upstream_status(parts.status) {
+        return Err(UpstreamAttemptFailure::Response(
+            collect_failed_upstream_response(kind, parts, body).await,
+        ));
+    }
+
     let status_code = parts.status.as_u16();
     let is_sse = parts
         .headers
@@ -294,13 +426,7 @@ async fn forward_proxy_response(
             StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         );
 
-        for (name, value) in parts.headers {
-            if let Some(name) = name
-                && name.as_str() != "content-length"
-            {
-                res.headers_mut().insert(name, value);
-            }
-        }
+        copy_response_headers(res, parts.headers, false);
 
         let log_body = cfg.log_res_body;
         tracing::info!("{}", sse_passthrough_log(kind));
@@ -331,7 +457,7 @@ async fn forward_proxy_response(
         if matches!(kind, ProxyKind::Codex) {
             tracing::info!("=== Codex SSE 流式响应结束 ===");
         }
-        return;
+        return Ok(());
     }
 
     if matches!(kind, ProxyKind::Codex) {
@@ -341,9 +467,9 @@ async fn forward_proxy_response(
     let body_bytes = match BodyExt::collect(body).await {
         Ok(body) => body.to_bytes(),
         Err(error) => {
-            tracing::error!("Failed to collect response body: {}", error);
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            return;
+            return Err(UpstreamAttemptFailure::Transport(format!(
+                "Failed to collect response body: {error}"
+            )));
         }
     };
 
@@ -367,15 +493,173 @@ async fn forward_proxy_response(
     }
 
     res.status_code(StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
-    for (name, value) in parts.headers {
+    copy_response_headers(res, parts.headers, true);
+    res.body(body_bytes.to_vec());
+    Ok(())
+}
+
+fn should_retry_upstream_status(status: StatusCode) -> bool {
+    !status.is_success()
+}
+
+async fn collect_failed_upstream_response(
+    kind: ProxyKind,
+    parts: Parts,
+    body: Incoming,
+) -> FailedUpstreamResponse {
+    let content_encoding = parts
+        .headers
+        .get("content-encoding")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let status = StatusCode::from_u16(parts.status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let headers = parts.headers.into_iter().collect();
+
+    let body_bytes = match BodyExt::collect(body).await {
+        Ok(body) => body.to_bytes(),
+        Err(error) => {
+            tracing::error!(
+                "{}: failed to collect upstream error body: {}",
+                proxy_failure_label(kind),
+                error
+            );
+            Bytes::new()
+        }
+    };
+    let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding.as_deref());
+    let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
+
+    FailedUpstreamResponse {
+        status,
+        headers,
+        body: body_bytes.to_vec(),
+        body_text,
+    }
+}
+
+fn render_failed_upstream_response(res: &mut Response, failed_response: FailedUpstreamResponse) {
+    res.status_code(failed_response.status);
+    copy_response_headers(res, failed_response.headers, true);
+    res.body(failed_response.body);
+}
+
+fn copy_response_headers<I>(res: &mut Response, headers: I, strip_content_encoding: bool)
+where
+    I: IntoIterator<Item = (Option<HeaderName>, HeaderValue)>,
+{
+    for (name, value) in headers {
         if let Some(name) = name {
             let name_str = name.as_str();
-            if name_str != "content-length" && name_str != "content-encoding" {
+            if name_str != "content-length"
+                && (!strip_content_encoding || name_str != "content-encoding")
+            {
                 res.headers_mut().insert(name, value);
             }
         }
     }
-    res.body(body_bytes.to_vec());
+}
+
+fn log_failed_upstream_response(
+    kind: ProxyKind,
+    upstream: &SelectedUpstream,
+    attempt: usize,
+    total_attempts: usize,
+    log_response_body: bool,
+    failed_response: &FailedUpstreamResponse,
+) {
+    if attempt < total_attempts {
+        if log_response_body {
+            let body = if failed_response.body_text.is_empty() {
+                "<empty body>"
+            } else {
+                failed_response.body_text.as_str()
+            };
+            tracing::warn!(
+                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; endpoint={}, model={}, body={}",
+                proxy_failure_label(kind),
+                upstream.index,
+                attempt,
+                total_attempts,
+                failed_response.status,
+                upstream.endpoint,
+                upstream.model,
+                body
+            );
+        } else {
+            tracing::warn!(
+                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; endpoint={}, model={}",
+                proxy_failure_label(kind),
+                upstream.index,
+                attempt,
+                total_attempts,
+                failed_response.status,
+                upstream.endpoint,
+                upstream.model
+            );
+        }
+    } else {
+        if log_response_body {
+            let body = if failed_response.body_text.is_empty() {
+                "<empty body>"
+            } else {
+                failed_response.body_text.as_str()
+            };
+            tracing::error!(
+                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; endpoint={}, model={}, body={}",
+                proxy_failure_label(kind),
+                upstream.index,
+                attempt,
+                total_attempts,
+                failed_response.status,
+                upstream.endpoint,
+                upstream.model,
+                body
+            );
+        } else {
+            tracing::error!(
+                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; endpoint={}, model={}",
+                proxy_failure_label(kind),
+                upstream.index,
+                attempt,
+                total_attempts,
+                failed_response.status,
+                upstream.endpoint,
+                upstream.model
+            );
+        }
+    }
+}
+
+fn log_transport_failure(
+    kind: ProxyKind,
+    upstream: &SelectedUpstream,
+    attempt: usize,
+    total_attempts: usize,
+    error_message: &str,
+) {
+    if attempt < total_attempts {
+        tracing::warn!(
+            "{}: upstream[{}] attempt {}/{} transport error, retrying next upstream; endpoint={}, model={}, error={}",
+            proxy_failure_label(kind),
+            upstream.index,
+            attempt,
+            total_attempts,
+            upstream.endpoint,
+            upstream.model,
+            error_message
+        );
+    } else {
+        tracing::error!(
+            "{}: upstream[{}] attempt {}/{} transport error, no upstream left; endpoint={}, model={}, error={}",
+            proxy_failure_label(kind),
+            upstream.index,
+            attempt,
+            total_attempts,
+            upstream.endpoint,
+            upstream.model,
+            error_message
+        );
+    }
 }
 
 const fn sse_passthrough_log(kind: ProxyKind) -> &'static str {
@@ -403,5 +687,23 @@ const fn proxy_failure_label(kind: ProxyKind) -> &'static str {
     match kind {
         ProxyKind::Claude => "Proxy request failed",
         ProxyKind::Codex => "Codex proxy request failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use salvo::http::StatusCode;
+
+    use super::should_retry_upstream_status;
+
+    #[test]
+    fn should_retry_when_upstream_status_is_not_success() {
+        assert!(should_retry_upstream_status(StatusCode::BAD_REQUEST));
+        assert!(should_retry_upstream_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(should_retry_upstream_status(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!should_retry_upstream_status(StatusCode::OK));
+        assert!(!should_retry_upstream_status(StatusCode::CREATED));
     }
 }

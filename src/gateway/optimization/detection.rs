@@ -80,7 +80,7 @@ pub fn is_suggestion_mode_request(request: &Value) -> bool {
     })
 }
 
-pub fn detect_filepath_extraction_request(request: &Value) -> Option<(String, String)> {
+pub fn detect_filepath_extraction_request(request: &Value) -> Option<String> {
     let messages = get_messages(request)?;
     if messages.len() != 1 || message_role(&messages[0]) != Some("user") {
         return None;
@@ -118,17 +118,7 @@ pub fn detect_filepath_extraction_request(request: &Value) -> Option<(String, St
     let output_marker = content[command_start..].find(OUTPUT_MARKER)? + command_start;
 
     let command = content[command_start..output_marker].trim().to_owned();
-    let mut output = content[output_marker + OUTPUT_MARKER.len()..]
-        .trim()
-        .to_owned();
-
-    for marker in ["<", "\n\n"] {
-        if let Some(index) = output.find(marker) {
-            output = output[..index].trim().to_owned();
-        }
-    }
-
-    Some((command, output))
+    Some(command)
 }
 
 fn get_messages(request: &Value) -> Option<&[Value]> {
@@ -225,10 +215,7 @@ mod tests {
         });
 
         let result = detect_filepath_extraction_request(&request);
-        assert_eq!(
-            result,
-            Some((String::from("ls"), String::from("src\nCargo.toml")))
-        );
+        assert_eq!(result, Some(String::from("ls")));
     }
 
     #[test]
