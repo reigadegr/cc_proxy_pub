@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     );
     for (i, up) in cfg.upstream.iter().enumerate() {
         info!(
-            "  [{}] enable={}, endpoint={}, mode={:?}, api_keys={}",
+            "  [{}] enable={}, endpoint={}, modes={}, api_keys={}",
             i,
             up.enable,
             up.endpoint,

@@ -67,7 +67,7 @@ impl UpstreamSelector {
         let matching_count = self
             .upstreams
             .iter()
-            .filter(|upstream| upstream.enable && upstream.mode == expected_mode)
+            .filter(|upstream| upstream.enable && upstream.mode.supports(expected_mode))
             .count();
 
         if matching_count == 0 {
@@ -82,7 +82,7 @@ impl UpstreamSelector {
         let mut seen = 0;
         let (upstream_idx, upstream) =
             self.upstreams.iter().enumerate().find(|(_, upstream)| {
-                if !upstream.enable || upstream.mode != expected_mode {
+                if !upstream.enable || !upstream.mode.supports(expected_mode) {
                     return false;
                 }
 
@@ -104,7 +104,7 @@ impl UpstreamSelector {
             &upstream.endpoint,
             &upstream.model,
             api_key,
-            upstream.mode,
+            expected_mode,
         ))
     }
 }
@@ -121,7 +121,7 @@ mod tests {
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
-                mode: Mode::AnthropicDirect,
+                mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
                 enable: true,
@@ -132,7 +132,7 @@ mod tests {
                     "key2b".to_string(),
                     "key2c".to_string(),
                 ],
-                mode: Mode::OpenAIResponses,
+                mode: vec![Mode::OpenAIResponses].into(),
             },
         ]
     }
@@ -172,21 +172,21 @@ mod tests {
                 endpoint: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string()],
-                mode: Mode::AnthropicDirect,
+                mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
                 enable: true,
                 endpoint: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec!["key2a".to_string(), "key2b".to_string()],
-                mode: Mode::OpenAIResponses,
+                mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: true,
                 endpoint: "https://upstream3.example.com".to_string(),
                 model: "model3".to_string(),
                 api_keys: vec!["key3a".to_string(), "key3b".to_string()],
-                mode: Mode::OpenAIResponses,
+                mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
@@ -228,14 +228,14 @@ mod tests {
                 endpoint: "https://disabled.example.com".to_string(),
                 model: "disabled-model".to_string(),
                 api_keys: vec!["disabled-key".to_string()],
-                mode: Mode::OpenAIResponses,
+                mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: true,
                 endpoint: "https://enabled.example.com".to_string(),
                 model: "enabled-model".to_string(),
                 api_keys: vec!["enabled-key".to_string()],
-                mode: Mode::OpenAIResponses,
+                mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
@@ -258,10 +258,52 @@ mod tests {
             endpoint: "https://disabled.example.com".to_string(),
             model: "disabled-model".to_string(),
             api_keys: vec!["disabled-key".to_string()],
-            mode: Mode::OpenAIResponses,
+            mode: vec![Mode::OpenAIResponses].into(),
         }];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
         assert!(selector.next_by_mode(Mode::OpenAIResponses).is_none());
+    }
+
+    #[test]
+    fn test_next_by_mode_supports_multi_mode_upstream() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                endpoint: "https://multi.example.com".to_string(),
+                model: "shared-model".to_string(),
+                api_keys: vec!["shared-key-1".to_string(), "shared-key-2".to_string()],
+                mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
+            },
+            UpstreamConfig {
+                enable: true,
+                endpoint: "https://responses-only.example.com".to_string(),
+                model: "responses-model".to_string(),
+                api_keys: vec!["responses-key".to_string()],
+                mode: vec![Mode::OpenAIResponses].into(),
+            },
+        ];
+        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+
+        let (anthropic_idx, _, _, anthropic_key, anthropic_mode) = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("多协议 upstream 应支持 anthropic");
+        assert_eq!(anthropic_idx, 0);
+        assert_eq!(anthropic_key, "shared-key-1");
+        assert_eq!(anthropic_mode, Mode::AnthropicDirect);
+
+        let (responses_idx_0, _, _, responses_key_0, responses_mode_0) = selector
+            .next_by_mode(Mode::OpenAIResponses)
+            .expect("多协议 upstream 应支持 openai_responses");
+        assert_eq!(responses_idx_0, 0);
+        assert_eq!(responses_key_0, "shared-key-1");
+        assert_eq!(responses_mode_0, Mode::OpenAIResponses);
+
+        let (responses_idx_1, _, _, responses_key_1, responses_mode_1) = selector
+            .next_by_mode(Mode::OpenAIResponses)
+            .expect("responses 协议应继续轮询其他 upstream");
+        assert_eq!(responses_idx_1, 1);
+        assert_eq!(responses_key_1, "responses-key");
+        assert_eq!(responses_mode_1, Mode::OpenAIResponses);
     }
 }

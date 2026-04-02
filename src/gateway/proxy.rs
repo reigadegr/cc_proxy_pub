@@ -56,7 +56,7 @@ pub async fn handle_claude(
         ProxyPlan {
             kind: ProxyKind::Claude,
             upstream_mode: Mode::AnthropicDirect,
-            missing_upstream_message: "No upstream configured with mode = 'anthropic'",
+            missing_upstream_message: "No upstream configured with mode including 'anthropic'",
         },
         req,
         res,
@@ -77,7 +77,7 @@ pub async fn handle_codex(
         ProxyPlan {
             kind: ProxyKind::Codex,
             upstream_mode: Mode::OpenAIResponses,
-            missing_upstream_message: "No upstream configured with mode = 'openai_responses'",
+            missing_upstream_message: "No upstream configured with mode including 'openai_responses'",
         },
         req,
         res,

@@ -120,9 +120,9 @@ enable = true
 endpoint = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
-# mode 默认为 "anthropic"，直接透传 Anthropic 格式
+# mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该 upstream
-# 可选: "anthropic" | "openai_responses" | "openai_chat"
+# 也可写成 mode = ["anthropic", "openai_responses"]
 
 [optimizations]
 enable_network_probe_mock = true

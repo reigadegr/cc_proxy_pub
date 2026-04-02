@@ -1,4 +1,9 @@
-use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, IntoDeserializer, Visitor},
+};
 
 /// 工作模式枚举
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -15,6 +20,127 @@ pub enum Mode {
     OpenAIChat,
 }
 
+impl Mode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AnthropicDirect => "anthropic",
+            Self::OpenAIResponses => "openai_responses",
+            Self::OpenAIChat => "openai_chat",
+        }
+    }
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpstreamModes(Vec<Mode>);
+
+impl UpstreamModes {
+    pub fn supports(&self, mode: Mode) -> bool {
+        self.0.contains(&mode)
+    }
+
+    fn normalize(modes: Vec<Mode>) -> Self {
+        let mut normalized = Vec::with_capacity(modes.len());
+        for mode in modes {
+            if !normalized.contains(&mode) {
+                normalized.push(mode);
+            }
+        }
+
+        if normalized.is_empty() {
+            return Self::default();
+        }
+
+        Self(normalized)
+    }
+}
+
+impl Default for UpstreamModes {
+    fn default() -> Self {
+        Self(vec![Mode::AnthropicDirect])
+    }
+}
+
+impl From<Vec<Mode>> for UpstreamModes {
+    fn from(modes: Vec<Mode>) -> Self {
+        Self::normalize(modes)
+    }
+}
+
+impl Serialize for UpstreamModes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.0.len() == 1 {
+            return self.0[0].serialize(serializer);
+        }
+
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for UpstreamModes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UpstreamModesVisitor;
+
+        impl<'de> Visitor<'de> for UpstreamModesVisitor {
+            type Value = UpstreamModes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a mode string or a non-empty mode array")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let mode = Mode::deserialize(value.into_deserializer())?;
+                Ok(UpstreamModes::normalize(vec![mode]))
+            }
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let modes =
+                    Vec::<Mode>::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
+                if modes.is_empty() {
+                    return Err(de::Error::custom("mode array must not be empty"));
+                }
+
+                Ok(UpstreamModes::normalize(modes))
+            }
+        }
+
+        deserializer.deserialize_any(UpstreamModesVisitor)
+    }
+}
+
+impl fmt::Display for UpstreamModes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.len() == 1 {
+            return write!(f, "{}", self.0[0]);
+        }
+
+        let joined = self
+            .0
+            .iter()
+            .map(|mode| mode.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "[{joined}]")
+    }
+}
+
 /// 上游提供商配置
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpstreamConfig {
@@ -29,9 +155,9 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
-    /// 上游协议类型
+    /// 上游协议类型，支持单值或数组
     #[serde(default)]
-    pub mode: Mode,
+    pub mode: UpstreamModes,
 }
 
 /// 配置结构
@@ -91,7 +217,7 @@ impl Default for UpstreamConfig {
             endpoint: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
-            mode: Mode::AnthropicDirect,
+            mode: UpstreamModes::default(),
         }
     }
 }
@@ -115,7 +241,7 @@ pub fn enabled_upstream_count(upstreams: &[UpstreamConfig]) -> usize {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Config, Mode, default_port};
+    use super::{Config, Mode, UpstreamModes, default_port};
 
     #[test]
     fn upstream_enable_defaults_to_true() {
@@ -132,7 +258,41 @@ mod tests {
 
         assert_eq!(config.upstream.len(), 1);
         assert!(config.upstream[0].enable);
-        assert_eq!(config.upstream[0].mode, Mode::AnthropicDirect);
+        assert_eq!(config.upstream[0].mode, UpstreamModes::default());
+    }
+
+    #[test]
+    fn upstream_mode_accepts_array_and_deduplicates() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                endpoint = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                mode = ["anthropic", "openai_responses", "anthropic"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.upstream[0].mode,
+            UpstreamModes::normalize(vec![Mode::AnthropicDirect, Mode::OpenAIResponses])
+        );
+    }
+
+    #[test]
+    fn upstream_mode_rejects_empty_array() {
+        let result = toml::from_str::<Config>(
+            r#"
+                [[upstream]]
+                endpoint = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                mode = []
+            "#,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]
