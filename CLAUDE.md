@@ -77,7 +77,7 @@ git config user.email
 ## 架构概览
 
 ### 入口
-- **`src/main.rs`** - 初始化日志、原子配置、启动文件监听器，在 `0.0.0.0:9066` 启动 Salvo 服务器
+- **`src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9066`）启动 Salvo 服务器
 
 ### 配置系统 (`src/config/`)
 - **`mod.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载；`UpstreamConfig` 定义上游提供商；`OptimizationConfig` 控制拦截行为
@@ -110,6 +110,7 @@ git config user.email
 代理读取 `config.toml`（或第一个命令行参数指定的路径）。示例：
 
 ```toml
+port = 9066
 log_req_body = false
 log_res_body = false
 
@@ -133,6 +134,7 @@ enable_filepath_extraction_mock = true
 ```
 
 配置变更会通过 `notify` crate 自动检测并重载，无需重启服务。
+监听端口 `port` 仅在启动时读取，修改后需要重启服务。
 
 ## 请求流程
 

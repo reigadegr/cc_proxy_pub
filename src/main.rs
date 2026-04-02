@@ -43,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
     let cfg = atomic_config.get();
+    let listen_addr = format!("0.0.0.0:{}", cfg.port);
     info!(
         "Initial config: {} upstream(s), {} enabled",
         cfg.upstream.len(),
@@ -76,8 +77,8 @@ async fn main() -> anyhow::Result<()> {
         .push(Router::with_path("codex/{**rest}").goal(codex_proxy));
 
     // 启动服务器
-    let acceptor = TcpListener::new("0.0.0.0:9066").bind().await;
-    info!("Server listening on 0.0.0.0:9066");
+    let acceptor = TcpListener::new(listen_addr.clone()).bind().await;
+    info!("Server listening on {}", listen_addr);
 
     Server::new(acceptor).serve(router).await;
 

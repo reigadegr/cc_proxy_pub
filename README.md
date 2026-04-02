@@ -111,6 +111,7 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
 其中：
 - `ANTHROPIC_BASE_URL` 指向 `http://127.0.0.1:9066/claude`
 - `ANTHROPIC_AUTH_TOKEN` 可以随意填写——CliReqRefiner 转发时会覆盖它
+- 如果你修改了 `config.toml` 里的 `port`，这里也要同步改成对应端口
 
 ### 📦 构建
 
@@ -131,6 +132,9 @@ sh build_native_stable.sh r
 # 可配置多个上游，每个上游支持多个 API Key
 # 策略：上游之间轮询，API Key 之间轮询
 # 修改后即时生效
+
+# 服务监听端口（默认 9066，修改后需重启服务）
+port = 9066
 
 # 是否打印请求体
 log_req_body = false
@@ -175,7 +179,7 @@ cargo r
 cargo r /path/to/config.toml
 ```
 
-服务默认监听 `0.0.0.0:9066`。
+服务默认监听 `0.0.0.0:9066`，可通过 `config.toml` 顶层 `port` 修改。
 
 ---
 
@@ -188,6 +192,12 @@ cargo r /path/to/config.toml
 | `endpoint` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
+
+### 🌐 服务监听配置
+
+| 字段 | 类型 | 默认值 | 说明 |
+|:-----|:-----|:-------|:-----|
+| `port` | `u16` | `9066` | 服务监听端口，修改后需重启进程生效 |
 
 ### ⚙️ 优化配置
 

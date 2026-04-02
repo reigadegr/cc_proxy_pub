@@ -17,7 +17,8 @@ mod tests {
 
     #[test]
     fn normalizes_basic_spacing() {
-        let input = r#"log_req_body=false
+        let input = r#"port=19066
+log_req_body=false
 log_res_body =false
 [[upstream]]
 enable=true
@@ -28,6 +29,7 @@ api_keys=["k1","k2"]
 
         let output = format_toml(input);
 
+        assert!(output.contains("port = 19066"));
         assert!(output.contains("log_req_body = false"));
         assert!(output.contains("log_res_body = false"));
         assert!(output.contains("enable = true"));

@@ -37,6 +37,9 @@ pub struct UpstreamConfig {
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// 服务监听端口
+    #[serde(default = "default_port")]
+    pub port: u16,
     /// 是否打印请求体
     #[serde(default)]
     pub log_req_body: bool,
@@ -97,6 +100,10 @@ pub const fn default_true() -> bool {
     true
 }
 
+pub const fn default_port() -> u16 {
+    9066
+}
+
 pub const fn default_model() -> String {
     String::new()
 }
@@ -108,7 +115,7 @@ pub fn enabled_upstream_count(upstreams: &[UpstreamConfig]) -> usize {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Config, Mode};
+    use super::{Config, Mode, default_port};
 
     #[test]
     fn upstream_enable_defaults_to_true() {
@@ -126,5 +133,37 @@ mod tests {
         assert_eq!(config.upstream.len(), 1);
         assert!(config.upstream[0].enable);
         assert_eq!(config.upstream[0].mode, Mode::AnthropicDirect);
+    }
+
+    #[test]
+    fn port_defaults_to_9066() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                endpoint = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.port, default_port());
+    }
+
+    #[test]
+    fn port_can_be_overridden() {
+        let config: Config = toml::from_str(
+            r#"
+                port = 19066
+
+                [[upstream]]
+                endpoint = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.port, 19066);
     }
 }

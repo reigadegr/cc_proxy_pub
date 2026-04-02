@@ -62,6 +62,7 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<Config, String> {
 
 pub fn log_loaded_config(config: &Config) {
     info!("✅ 配置已加载:");
+    info!("listen_port: {}", config.port);
     info!(
         "upstream 数量: {} 个（启用 {} 个）",
         config.upstream.len(),

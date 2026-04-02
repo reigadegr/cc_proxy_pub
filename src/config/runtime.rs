@@ -52,6 +52,7 @@ impl AtomicConfig {
             Ok(new_config) => {
                 let old = self.inner.load();
 
+                let port_changed = old.port != new_config.port;
                 let upstream_changed = old.upstream != new_config.upstream;
                 let optimizations_changed = old.optimizations != new_config.optimizations;
                 let log_req_body_changed = old.log_req_body != new_config.log_req_body;
@@ -64,12 +65,20 @@ impl AtomicConfig {
                     self.upstream_selector.store(Arc::new(new_selector));
                 }
 
-                if upstream_changed
+                if port_changed
+                    || upstream_changed
                     || optimizations_changed
                     || log_req_body_changed
                     || log_res_body_changed
                 {
                     info!("✅ 配置已更新:");
+                    if port_changed {
+                        info!(
+                            "listen_port: {}→{}（重启服务后生效）",
+                            old.port, new_config.port
+                        );
+                    }
+
                     if upstream_changed {
                         log_upstream_change(&old.upstream, &new_config.upstream);
                     }
