@@ -3,7 +3,11 @@ use std::borrow::Cow;
 use serde_json::Value;
 
 const HISTORY_ANALYSIS_PARSE: &str = "You are an expert at analyzing git history.";
-const TITLE_GENERATION_PHRASE: &str = "Generate a concise, sentence-case title";
+const TITLE_GENERATION_MARKERS: &[&str] = &[
+    "Generate a concise, sentence-case title",
+    "Analyze if this message indicates a new conversation topic.",
+    "'isNewTopic' (boolean) and 'title' (string",
+];
 const SUGGESTION_MODE_MARKER: &str = "[SUGGESTION MODE:";
 const COMMAND_MARKER: &str = "Command:";
 const OUTPUT_MARKER: &str = "Output:";
@@ -66,7 +70,9 @@ pub fn is_title_generation_request(request: &Value) -> bool {
     };
 
     let text = extract_system_text(last_system);
-    text.contains(TITLE_GENERATION_PHRASE)
+    TITLE_GENERATION_MARKERS
+        .iter()
+        .any(|marker| text.contains(marker))
 }
 
 pub fn is_suggestion_mode_request(request: &Value) -> bool {
@@ -240,6 +246,19 @@ mod tests {
                 },
                 {
                     "text": "Analyze if this message indicates a new conversation topic. If it does, extract a 2-3 word title that captures the new topic. Format your response as a JSON object with two fields: 'isNewTopic' (boolean) and 'title' (string, or null if isNewTopic is false).",
+                    "type": "text"
+                }
+            ]
+        });
+        assert!(is_title_generation_request(&request));
+    }
+
+    #[test]
+    fn test_title_generation_detection_with_legacy_prompt() {
+        let request = json!({
+            "system": [
+                {
+                    "text": "Generate a concise, sentence-case title for the latest user request.",
                     "type": "text"
                 }
             ]
