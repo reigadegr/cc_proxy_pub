@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use serde_json::Value;
 
 const HISTORY_ANALYSIS_PARSE: &str = "You are an expert at analyzing git history.";
-const TITLE_GENERATION_PHRASE: &str = "Analyze if this message indicates a new conversation topic.";
+const TITLE_GENERATION_PHRASE: &str = "Generate a concise, sentence-case title";
 const SUGGESTION_MODE_MARKER: &str = "[SUGGESTION MODE:";
 const COMMAND_MARKER: &str = "Command:";
 const OUTPUT_MARKER: &str = "Output:";
