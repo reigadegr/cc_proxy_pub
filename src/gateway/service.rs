@@ -148,16 +148,9 @@ pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
     stats.system_tokens.fetch_add(system, Ordering::Relaxed);
     let count = stats.request_count.fetch_add(1, Ordering::Relaxed) + 1;
 
-    let waste = user_hist + assistant + system;
-    let waste_ratio = if user_new > 0 {
-        waste as f64 / user_new as f64
-    } else {
-        0.0
-    };
-
     info!(
-        "📊 本次 | 总: {} | 你: {} | 你(历史): {} | 助手(历史): {} | 系统: {} | 浪费比: {:.1}:1",
-        total, user_new, user_hist, assistant, system, waste_ratio
+        "📊 本次 | 总: {} | 你: {} | 你(历史): {} | 助手(历史): {} | 系统: {}",
+        total, user_new, user_hist, assistant, system
     );
 
     let total_acc = stats.total_tokens.load(Ordering::Relaxed);
@@ -167,17 +160,7 @@ pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
     let sys_acc = stats.system_tokens.load(Ordering::Relaxed);
 
     warn!(
-        "🔥 累计 {} 次 | 总: {} | 你: {} | 浪费: {} (历史:{} 系统:{}) | 平均浪费比: {:.1}:1",
-        count,
-        total_acc,
-        new_acc,
-        hist_acc + sys_acc,
-        hist_acc,
-        sys_acc,
-        if new_acc > 0 {
-            (hist_acc + sys_acc) as f64 / new_acc as f64
-        } else {
-            0.0
-        }
+        "🔥 累计 {} 次 | 总: {} | 你: {} | 历史上下文: {} | 系统: {}",
+        count, total_acc, new_acc, hist_acc, sys_acc
     );
 }

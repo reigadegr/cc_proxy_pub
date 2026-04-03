@@ -82,7 +82,6 @@ CliReqRefiner 的核心功能——在转发到上游之前精炼请求体：
 
 - 实时请求计数和 token 消耗统计
 - 区分用户输入 token、上下文 token 和助手响应 token
-- 计算 token 浪费比例，帮助优化使用成本
 
 ---
 
