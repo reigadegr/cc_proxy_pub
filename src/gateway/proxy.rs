@@ -41,7 +41,7 @@ struct ProxyPlan {
 
 struct SelectedUpstream {
     index: usize,
-    endpoint: String,
+    base_url: String,
     model: String,
     api_key: String,
     mode: Mode,
@@ -221,7 +221,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
 
         let attempt_body = apply_upstream_model(ctx.body_bytes.clone(), &selected_upstream.model);
         let (upstream_url, host) =
-            make_proxy_url(&selected_upstream.endpoint, selected_upstream.mode, ctx.req);
+            make_proxy_url(&selected_upstream.base_url, selected_upstream.mode, ctx.req);
 
         let proxy_req = match build_proxy_request(
             ctx.req,
@@ -333,11 +333,11 @@ async fn prepare_request_body(
 }
 
 fn select_upstream(selector: &UpstreamSelector, plan: ProxyPlan) -> Option<SelectedUpstream> {
-    let (index, endpoint, model, api_key, mode) = selector.next_by_mode(plan.upstream_mode)?;
+    let (index, base_url, model, api_key, mode) = selector.next_by_mode(plan.upstream_mode)?;
 
     Some(SelectedUpstream {
         index,
-        endpoint: endpoint.to_owned(),
+        base_url: base_url.to_owned(),
         model: model.to_owned(),
         api_key: api_key.to_owned(),
         mode,
@@ -356,12 +356,12 @@ fn log_selected_upstream(
     };
 
     tracing::info!(
-        "{} Upstream[{}] (attempt {}/{}): endpoint={}, model={}, api_key: {}***, mode={:?}",
+        "{} Upstream[{}] (attempt {}/{}): base_url={}, model={}, api_key: {}***, mode={:?}",
         prefix,
         upstream.index,
         attempt,
         total_attempts,
-        upstream.endpoint,
+        upstream.base_url,
         upstream.model,
         upstream.api_key.chars().take(8).collect::<String>(),
         upstream.mode
@@ -575,25 +575,25 @@ fn log_failed_upstream_response(
                 failed_response.body_text.as_str()
             };
             tracing::warn!(
-                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; endpoint={}, model={}, body={}",
+                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; base_url={}, model={}, body={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 attempt,
                 total_attempts,
                 failed_response.status,
-                upstream.endpoint,
+                upstream.base_url,
                 upstream.model,
                 body
             );
         } else {
             tracing::warn!(
-                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; endpoint={}, model={}",
+                "{}: upstream[{}] attempt {}/{} returned status {}, retrying next upstream; base_url={}, model={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 attempt,
                 total_attempts,
                 failed_response.status,
-                upstream.endpoint,
+                upstream.base_url,
                 upstream.model
             );
         }
@@ -605,25 +605,25 @@ fn log_failed_upstream_response(
                 failed_response.body_text.as_str()
             };
             tracing::error!(
-                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; endpoint={}, model={}, body={}",
+                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; base_url={}, model={}, body={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 attempt,
                 total_attempts,
                 failed_response.status,
-                upstream.endpoint,
+                upstream.base_url,
                 upstream.model,
                 body
             );
         } else {
             tracing::error!(
-                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; endpoint={}, model={}",
+                "{}: upstream[{}] attempt {}/{} returned status {}, no upstream left; base_url={}, model={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 attempt,
                 total_attempts,
                 failed_response.status,
-                upstream.endpoint,
+                upstream.base_url,
                 upstream.model
             );
         }
@@ -639,23 +639,23 @@ fn log_transport_failure(
 ) {
     if attempt < total_attempts {
         tracing::warn!(
-            "{}: upstream[{}] attempt {}/{} transport error, retrying next upstream; endpoint={}, model={}, error={}",
+            "{}: upstream[{}] attempt {}/{} transport error, retrying next upstream; base_url={}, model={}, error={}",
             proxy_failure_label(kind),
             upstream.index,
             attempt,
             total_attempts,
-            upstream.endpoint,
+            upstream.base_url,
             upstream.model,
             error_message
         );
     } else {
         tracing::error!(
-            "{}: upstream[{}] attempt {}/{} transport error, no upstream left; endpoint={}, model={}, error={}",
+            "{}: upstream[{}] attempt {}/{} transport error, no upstream left; base_url={}, model={}, error={}",
             proxy_failure_label(kind),
             upstream.index,
             attempt,
             total_attempts,
-            upstream.endpoint,
+            upstream.base_url,
             upstream.model,
             error_message
         );

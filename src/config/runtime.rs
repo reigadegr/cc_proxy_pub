@@ -148,10 +148,10 @@ fn log_upstream_change(old_upstream: &[UpstreamConfig], new_upstream: &[Upstream
     );
     for (index, upstream) in new_upstream.iter().enumerate() {
         info!(
-            "  [{}] enable={}, endpoint={}, model={}, modes={}, api_keys={} 个",
+            "  [{}] enable={}, base_url={}, model={}, modes={}, api_keys={} 个",
             index,
             upstream.enable,
-            upstream.endpoint,
+            upstream.base_url,
             upstream.model,
             upstream.mode,
             upstream.api_keys.len()

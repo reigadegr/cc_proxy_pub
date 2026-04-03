@@ -13,14 +13,6 @@
   - 文件路径提取
 - **请求统计** - 追踪 Token 消耗（总量、用户输入、历史上下文、助手回复、系统提示）
 
-## 进入项目第一步
-
-**如果不知道当前所在目录，必须先执行 `pwd` 获取当前目录**。
-
-```bash
-pwd
-```
-
 ## 常用命令
 
 ### 构建
@@ -117,7 +109,7 @@ log_res_body = false
 # Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
 enable = true
-endpoint = "https://open.bigmodel.cn/api/anthropic"
+base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]

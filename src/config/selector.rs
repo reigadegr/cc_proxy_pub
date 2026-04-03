@@ -65,7 +65,7 @@ impl UpstreamSelector {
     /// 请求6: upstream[1], key[2]
     /// 请求7: upstream[0], key[0]  (循环)
     ///
-    /// 返回 (upstream索引, endpoint, model, `api_key`, `mode`)
+    /// 返回 (upstream索引, `base_url`, model, `api_key`, `mode`)
     ///
     pub fn next_by_mode(&self, expected_mode: Mode) -> Option<(usize, &str, &str, &str, Mode)> {
         if self.upstreams.is_empty() {
@@ -105,7 +105,7 @@ impl UpstreamSelector {
 
         Some((
             upstream_idx,
-            &upstream.endpoint,
+            &upstream.base_url,
             &upstream.model,
             api_key,
             expected_mode,
@@ -122,14 +122,14 @@ mod tests {
         vec![
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://upstream1.example.com".to_string(),
+                base_url: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://upstream2.example.com".to_string(),
+                base_url: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec![
                     "key2a".to_string(),
@@ -173,21 +173,21 @@ mod tests {
         let upstreams = vec![
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://upstream1.example.com".to_string(),
+                base_url: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string()],
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://upstream2.example.com".to_string(),
+                base_url: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec!["key2a".to_string(), "key2b".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://upstream3.example.com".to_string(),
+                base_url: "https://upstream3.example.com".to_string(),
                 model: "model3".to_string(),
                 api_keys: vec!["key3a".to_string(), "key3b".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),
@@ -229,14 +229,14 @@ mod tests {
         let upstreams = vec![
             UpstreamConfig {
                 enable: false,
-                endpoint: "https://disabled.example.com".to_string(),
+                base_url: "https://disabled.example.com".to_string(),
                 model: "disabled-model".to_string(),
                 api_keys: vec!["disabled-key".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://enabled.example.com".to_string(),
+                base_url: "https://enabled.example.com".to_string(),
                 model: "enabled-model".to_string(),
                 api_keys: vec!["enabled-key".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),
@@ -244,12 +244,12 @@ mod tests {
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (idx, endpoint, model, key, mode) = selector
+        let (idx, base_url, model, key, mode) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应跳过禁用 upstream，选择启用项");
 
         assert_eq!(idx, 1);
-        assert_eq!(endpoint, "https://enabled.example.com");
+        assert_eq!(base_url, "https://enabled.example.com");
         assert_eq!(model, "enabled-model");
         assert_eq!(key, "enabled-key");
         assert_eq!(mode, Mode::OpenAIResponses);
@@ -259,7 +259,7 @@ mod tests {
     fn test_next_by_mode_returns_none_when_all_matching_upstreams_disabled() {
         let upstreams = vec![UpstreamConfig {
             enable: false,
-            endpoint: "https://disabled.example.com".to_string(),
+            base_url: "https://disabled.example.com".to_string(),
             model: "disabled-model".to_string(),
             api_keys: vec!["disabled-key".to_string()],
             mode: vec![Mode::OpenAIResponses].into(),
@@ -274,14 +274,14 @@ mod tests {
         let upstreams = vec![
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://multi.example.com".to_string(),
+                base_url: "https://multi.example.com".to_string(),
                 model: "shared-model".to_string(),
                 api_keys: vec!["shared-key-1".to_string(), "shared-key-2".to_string()],
                 mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://responses-only.example.com".to_string(),
+                base_url: "https://responses-only.example.com".to_string(),
                 model: "responses-model".to_string(),
                 api_keys: vec!["responses-key".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),
@@ -316,21 +316,21 @@ mod tests {
         let upstreams = vec![
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://anthropic.example.com".to_string(),
+                base_url: "https://anthropic.example.com".to_string(),
                 model: "anthropic-model".to_string(),
                 api_keys: vec!["anthropic-key".to_string()],
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
                 enable: true,
-                endpoint: "https://shared.example.com".to_string(),
+                base_url: "https://shared.example.com".to_string(),
                 model: "shared-model".to_string(),
                 api_keys: vec!["shared-key".to_string()],
                 mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
                 enable: false,
-                endpoint: "https://disabled.example.com".to_string(),
+                base_url: "https://disabled.example.com".to_string(),
                 model: "disabled-model".to_string(),
                 api_keys: vec!["disabled-key".to_string()],
                 mode: vec![Mode::OpenAIResponses].into(),

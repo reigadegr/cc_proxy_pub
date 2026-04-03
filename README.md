@@ -143,7 +143,7 @@ log_res_body = false
 # 上游 1
 [[upstream]]
 enable = true
-endpoint = "https://open.bigmodel.cn/api/anthropic"
+base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
@@ -153,7 +153,7 @@ api_keys = ["your_api_key1", "your_api_key2"]
 # 上游 2：添加更多上游实现负载均衡
 # [[upstream]]
 # enable = true
-# endpoint = "https://another-provider.com/api/anthropic"
+# base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
@@ -188,7 +188,7 @@ cargo r /path/to/config.toml
 
 | 字段 | 类型 | 说明 |
 |:-----|:-----|:-----|
-| `endpoint` | `String` | 上游 API 地址 |
+| `base_url` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
 

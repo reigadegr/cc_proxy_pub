@@ -148,7 +148,8 @@ pub struct UpstreamConfig {
     #[serde(default = "default_true")]
     pub enable: bool,
     /// 上游主机地址+路径
-    pub endpoint: String,
+    #[serde(alias = "endpoint")]
+    pub base_url: String,
     /// 模型名称（覆盖请求体中的 model 字段）
     #[serde(default = "default_model")]
     pub model: String,
@@ -214,7 +215,7 @@ impl Default for UpstreamConfig {
     fn default() -> Self {
         Self {
             enable: default_true(),
-            endpoint: String::new(),
+            base_url: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
             mode: UpstreamModes::default(),
@@ -248,7 +249,7 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
                 [[upstream]]
-                endpoint = "https://example.com"
+                base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
                 mode = "anthropic"
@@ -266,7 +267,7 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
                 [[upstream]]
-                endpoint = "https://example.com"
+                base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
                 mode = ["anthropic", "openai_responses", "anthropic"]
@@ -281,11 +282,26 @@ mod tests {
     }
 
     #[test]
+    fn upstream_endpoint_alias_still_deserializes() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                endpoint = "https://legacy.example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.upstream[0].base_url, "https://legacy.example.com");
+    }
+
+    #[test]
     fn upstream_mode_rejects_empty_array() {
         let result = toml::from_str::<Config>(
             r#"
                 [[upstream]]
-                endpoint = "https://example.com"
+                base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
                 mode = []
@@ -300,7 +316,7 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
                 [[upstream]]
-                endpoint = "https://example.com"
+                base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
             "#,
@@ -317,7 +333,7 @@ mod tests {
                 port = 19066
 
                 [[upstream]]
-                endpoint = "https://example.com"
+                base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
             "#,

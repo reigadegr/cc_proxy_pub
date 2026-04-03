@@ -22,7 +22,7 @@ log_req_body=false
 log_res_body =false
 [[upstream]]
 enable=true
-endpoint= "https://example.com"
+base_url= "https://example.com"
 model="m"
 api_keys=["k1","k2"]
 "#;
@@ -33,7 +33,7 @@ api_keys=["k1","k2"]
         assert!(output.contains("log_req_body = false"));
         assert!(output.contains("log_res_body = false"));
         assert!(output.contains("enable = true"));
-        assert!(output.contains("endpoint = \"https://example.com\""));
+        assert!(output.contains("base_url = \"https://example.com\""));
         assert!(output.contains("model = \"m\""));
         assert!(output.contains("api_keys = [\"k1\", \"k2\"]"));
     }

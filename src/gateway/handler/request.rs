@@ -128,12 +128,12 @@ pub fn req_local_intercept(
     false
 }
 
-pub fn make_proxy_url<'a>(endpoint: &'a str, mode: Mode, req: &Request) -> (String, Cow<'a, str>) {
-    // 解析 endpoint
-    let host_str = endpoint
+pub fn make_proxy_url<'a>(base_url: &'a str, mode: Mode, req: &Request) -> (String, Cow<'a, str>) {
+    // 解析 base_url
+    let host_str = base_url
         .strip_prefix("https://")
-        .or_else(|| endpoint.strip_prefix("http://"))
-        .unwrap_or(endpoint);
+        .or_else(|| base_url.strip_prefix("http://"))
+        .unwrap_or(base_url);
 
     let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
 
@@ -157,7 +157,7 @@ pub fn make_proxy_url<'a>(endpoint: &'a str, mode: Mode, req: &Request) -> (Stri
         )
     };
 
-    let scheme = if endpoint.starts_with("https://") {
+    let scheme = if base_url.starts_with("https://") {
         "https"
     } else {
         "http"
