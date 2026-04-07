@@ -44,7 +44,3 @@ pub fn prune_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
 
     to_vec(&json).ok().map(Into::into)
 }
-
-pub fn filter_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    prune_tools_by_description(body_bytes)
-}

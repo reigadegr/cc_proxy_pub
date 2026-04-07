@@ -17,7 +17,7 @@ use crate::{
             content_filter::filter_content_strings,
             content_tag::{filter_messages_content, override_permission_error},
             system_prompt::filter_system_prompts,
-            tool_desc::filter_tools_by_description,
+            tool_desc::prune_tools_by_description,
         },
         optimization::try_local_optimization,
         service::log_full_response,
@@ -68,7 +68,7 @@ pub async fn filter_req_body(body_bytes: &[u8]) -> Result<Bytes> {
 
     // 过滤 tools.description 命中关键词的工具定义
     if !current.is_empty()
-        && let Some(filtered) = filter_tools_by_description(&current)
+        && let Some(filtered) = prune_tools_by_description(&current)
     {
         current = filtered;
     }
