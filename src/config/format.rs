@@ -25,6 +25,7 @@ enable=true
 base_url= "https://example.com"
 model="m"
 api_keys=["k1","k2"]
+user_agent="Device-A/1.0"
 "#;
 
         let output = format_toml(input);
@@ -36,5 +37,6 @@ api_keys=["k1","k2"]
         assert!(output.contains("base_url = \"https://example.com\""));
         assert!(output.contains("model = \"m\""));
         assert!(output.contains("api_keys = [\"k1\", \"k2\"]"));
+        assert!(output.contains("user_agent = \"Device-A/1.0\""));
     }
 }

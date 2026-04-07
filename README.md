@@ -146,6 +146,7 @@ enable = true
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
+user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该上游
 # 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"]
@@ -156,6 +157,7 @@ api_keys = ["your_api_key1", "your_api_key2"]
 # base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
+# user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]
@@ -191,6 +193,7 @@ cargo r /path/to/config.toml
 | `base_url` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
+| `user_agent` | `String` | 可选，自定义发往该上游的 `User-Agent`；未配置时透传原始请求头 |
 
 ### 🌐 服务监听配置
 

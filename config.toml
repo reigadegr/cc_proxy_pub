@@ -17,6 +17,7 @@ enable = true
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
+user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该 upstream
 # 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"]
@@ -27,6 +28,7 @@ api_keys = ["your_api_key1", "your_api_key2"]
 # base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
+# user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
 # openai_chat 暂未适配
 

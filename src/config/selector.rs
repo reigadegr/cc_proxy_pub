@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::{Mode, UpstreamConfig};
 
+type UpstreamSelection<'a> = (usize, &'a str, &'a str, &'a str, Option<&'a str>, Mode);
+
 /// Upstream 选择器，使用双层 round-robin 策略
 pub struct UpstreamSelector {
     /// 上游配置列表
@@ -65,9 +67,9 @@ impl UpstreamSelector {
     /// 请求6: upstream[1], key[2]
     /// 请求7: upstream[0], key[0]  (循环)
     ///
-    /// 返回 (upstream索引, `base_url`, model, `api_key`, `mode`)
+    /// 返回 (upstream索引, `base_url`, model, `api_key`, `user_agent`, `mode`)
     ///
-    pub fn next_by_mode(&self, expected_mode: Mode) -> Option<(usize, &str, &str, &str, Mode)> {
+    pub fn next_by_mode(&self, expected_mode: Mode) -> Option<UpstreamSelection<'_>> {
         if self.upstreams.is_empty() {
             return None;
         }
@@ -108,6 +110,7 @@ impl UpstreamSelector {
             &upstream.base_url,
             &upstream.model,
             api_key,
+            upstream.user_agent.as_deref(),
             expected_mode,
         ))
     }
@@ -125,6 +128,7 @@ mod tests {
                 base_url: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string(), "key1b".to_string()],
+                user_agent: Some("Device-A/1.0".to_string()),
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
@@ -136,6 +140,7 @@ mod tests {
                     "key2b".to_string(),
                     "key2c".to_string(),
                 ],
+                user_agent: None,
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ]
@@ -153,18 +158,20 @@ mod tests {
         let upstreams = create_test_upstreams();
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (idx0, _, _, key0, mode0) = selector
+        let (idx0, _, _, key0, user_agent0, mode0) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能选到 openai_responses upstream");
         assert_eq!(idx0, 1);
         assert_eq!(key0, "key2a");
+        assert_eq!(user_agent0, None);
         assert_eq!(mode0, Mode::OpenAIResponses);
 
-        let (idx1, _, _, key1, mode1) = selector
+        let (idx1, _, _, key1, user_agent1, mode1) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能继续选到 openai_responses upstream");
         assert_eq!(idx1, 1);
         assert_eq!(key1, "key2b");
+        assert_eq!(user_agent1, None);
         assert_eq!(mode1, Mode::OpenAIResponses);
     }
 
@@ -176,6 +183,7 @@ mod tests {
                 base_url: "https://upstream1.example.com".to_string(),
                 model: "model1".to_string(),
                 api_keys: vec!["key1a".to_string()],
+                user_agent: None,
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
@@ -183,6 +191,7 @@ mod tests {
                 base_url: "https://upstream2.example.com".to_string(),
                 model: "model2".to_string(),
                 api_keys: vec!["key2a".to_string(), "key2b".to_string()],
+                user_agent: Some("Device-B/1.0".to_string()),
                 mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
@@ -190,37 +199,42 @@ mod tests {
                 base_url: "https://upstream3.example.com".to_string(),
                 model: "model3".to_string(),
                 api_keys: vec!["key3a".to_string(), "key3b".to_string()],
+                user_agent: None,
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (idx0, _, _, key0, mode0) = selector
+        let (idx0, _, _, key0, user_agent0, mode0) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能选到第一个匹配 upstream");
         assert_eq!(idx0, 1);
         assert_eq!(key0, "key2a");
+        assert_eq!(user_agent0, Some("Device-B/1.0"));
         assert_eq!(mode0, Mode::OpenAIResponses);
 
-        let (idx1, _, _, key1, mode1) = selector
+        let (idx1, _, _, key1, user_agent1, mode1) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能选到第二个匹配 upstream");
         assert_eq!(idx1, 2);
         assert_eq!(key1, "key3a");
+        assert_eq!(user_agent1, None);
         assert_eq!(mode1, Mode::OpenAIResponses);
 
-        let (idx2, _, _, key2, mode2) = selector
+        let (idx2, _, _, key2, user_agent2, mode2) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能继续轮询第一个匹配 upstream 的下一个 key");
         assert_eq!(idx2, 1);
         assert_eq!(key2, "key2b");
+        assert_eq!(user_agent2, Some("Device-B/1.0"));
         assert_eq!(mode2, Mode::OpenAIResponses);
 
-        let (idx3, _, _, key3, mode3) = selector
+        let (idx3, _, _, key3, user_agent3, mode3) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应能继续轮询第二个匹配 upstream 的下一个 key");
         assert_eq!(idx3, 2);
         assert_eq!(key3, "key3b");
+        assert_eq!(user_agent3, None);
         assert_eq!(mode3, Mode::OpenAIResponses);
     }
 
@@ -232,6 +246,7 @@ mod tests {
                 base_url: "https://disabled.example.com".to_string(),
                 model: "disabled-model".to_string(),
                 api_keys: vec!["disabled-key".to_string()],
+                user_agent: None,
                 mode: vec![Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
@@ -239,12 +254,13 @@ mod tests {
                 base_url: "https://enabled.example.com".to_string(),
                 model: "enabled-model".to_string(),
                 api_keys: vec!["enabled-key".to_string()],
+                user_agent: Some("Device-C/1.0".to_string()),
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (idx, base_url, model, key, mode) = selector
+        let (idx, base_url, model, key, user_agent, mode) = selector
             .next_by_mode(Mode::OpenAIResponses)
             .expect("应跳过禁用 upstream，选择启用项");
 
@@ -252,6 +268,7 @@ mod tests {
         assert_eq!(base_url, "https://enabled.example.com");
         assert_eq!(model, "enabled-model");
         assert_eq!(key, "enabled-key");
+        assert_eq!(user_agent, Some("Device-C/1.0"));
         assert_eq!(mode, Mode::OpenAIResponses);
     }
 
@@ -262,6 +279,7 @@ mod tests {
             base_url: "https://disabled.example.com".to_string(),
             model: "disabled-model".to_string(),
             api_keys: vec!["disabled-key".to_string()],
+            user_agent: None,
             mode: vec![Mode::OpenAIResponses].into(),
         }];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
@@ -277,6 +295,7 @@ mod tests {
                 base_url: "https://multi.example.com".to_string(),
                 model: "shared-model".to_string(),
                 api_keys: vec!["shared-key-1".to_string(), "shared-key-2".to_string()],
+                user_agent: Some("Shared-UA/1.0".to_string()),
                 mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
@@ -284,30 +303,36 @@ mod tests {
                 base_url: "https://responses-only.example.com".to_string(),
                 model: "responses-model".to_string(),
                 api_keys: vec!["responses-key".to_string()],
+                user_agent: None,
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
         let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
 
-        let (anthropic_idx, _, _, anthropic_key, anthropic_mode) = selector
+        let (anthropic_idx, _, _, anthropic_key, anthropic_user_agent, anthropic_mode) = selector
             .next_by_mode(Mode::AnthropicDirect)
             .expect("多协议 upstream 应支持 anthropic");
         assert_eq!(anthropic_idx, 0);
         assert_eq!(anthropic_key, "shared-key-1");
+        assert_eq!(anthropic_user_agent, Some("Shared-UA/1.0"));
         assert_eq!(anthropic_mode, Mode::AnthropicDirect);
 
-        let (responses_idx_0, _, _, responses_key_0, responses_mode_0) = selector
-            .next_by_mode(Mode::OpenAIResponses)
-            .expect("多协议 upstream 应支持 openai_responses");
+        let (responses_idx_0, _, _, responses_key_0, responses_user_agent_0, responses_mode_0) =
+            selector
+                .next_by_mode(Mode::OpenAIResponses)
+                .expect("多协议 upstream 应支持 openai_responses");
         assert_eq!(responses_idx_0, 0);
         assert_eq!(responses_key_0, "shared-key-1");
+        assert_eq!(responses_user_agent_0, Some("Shared-UA/1.0"));
         assert_eq!(responses_mode_0, Mode::OpenAIResponses);
 
-        let (responses_idx_1, _, _, responses_key_1, responses_mode_1) = selector
-            .next_by_mode(Mode::OpenAIResponses)
-            .expect("responses 协议应继续轮询其他 upstream");
+        let (responses_idx_1, _, _, responses_key_1, responses_user_agent_1, responses_mode_1) =
+            selector
+                .next_by_mode(Mode::OpenAIResponses)
+                .expect("responses 协议应继续轮询其他 upstream");
         assert_eq!(responses_idx_1, 1);
         assert_eq!(responses_key_1, "responses-key");
+        assert_eq!(responses_user_agent_1, None);
         assert_eq!(responses_mode_1, Mode::OpenAIResponses);
     }
 
@@ -319,6 +344,7 @@ mod tests {
                 base_url: "https://anthropic.example.com".to_string(),
                 model: "anthropic-model".to_string(),
                 api_keys: vec!["anthropic-key".to_string()],
+                user_agent: None,
                 mode: vec![Mode::AnthropicDirect].into(),
             },
             UpstreamConfig {
@@ -326,6 +352,7 @@ mod tests {
                 base_url: "https://shared.example.com".to_string(),
                 model: "shared-model".to_string(),
                 api_keys: vec!["shared-key".to_string()],
+                user_agent: Some("Shared-UA/1.0".to_string()),
                 mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
             },
             UpstreamConfig {
@@ -333,6 +360,7 @@ mod tests {
                 base_url: "https://disabled.example.com".to_string(),
                 model: "disabled-model".to_string(),
                 api_keys: vec!["disabled-key".to_string()],
+                user_agent: None,
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
@@ -341,5 +369,24 @@ mod tests {
         assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 2);
         assert_eq!(selector.matching_count_by_mode(Mode::OpenAIResponses), 1);
         assert_eq!(selector.matching_count_by_mode(Mode::OpenAIChat), 0);
+    }
+
+    #[test]
+    fn test_next_by_mode_returns_configured_user_agent() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            base_url: "https://ua.example.com".to_string(),
+            model: "ua-model".to_string(),
+            api_keys: vec!["ua-key".to_string()],
+            user_agent: Some("Device-D/1.0".to_string()),
+            mode: vec![Mode::AnthropicDirect].into(),
+        }];
+        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+
+        let (_, _, _, _, user_agent, _) = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("应能返回 upstream 的 user_agent");
+
+        assert_eq!(user_agent, Some("Device-D/1.0"));
     }
 }

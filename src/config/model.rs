@@ -156,6 +156,9 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
+    /// 发往上游时覆盖的 User-Agent；未配置时透传入站请求头
+    #[serde(default, alias = "ua")]
+    pub user_agent: Option<String>,
     /// 上游协议类型，支持单值或数组
     #[serde(default)]
     pub mode: UpstreamModes,
@@ -218,6 +221,7 @@ impl Default for UpstreamConfig {
             base_url: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
+            user_agent: None,
             mode: UpstreamModes::default(),
         }
     }
@@ -309,6 +313,44 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn upstream_user_agent_deserializes_when_present() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                user_agent = "Claude-Code/1.0.84"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.upstream[0].user_agent.as_deref(),
+            Some("Claude-Code/1.0.84")
+        );
+    }
+
+    #[test]
+    fn upstream_user_agent_alias_ua_still_deserializes() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                ua = "Claude-Code/1.0.84"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.upstream[0].user_agent.as_deref(),
+            Some("Claude-Code/1.0.84")
+        );
     }
 
     #[test]

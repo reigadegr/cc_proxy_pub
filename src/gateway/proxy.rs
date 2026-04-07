@@ -44,6 +44,7 @@ struct SelectedUpstream {
     base_url: String,
     model: String,
     api_key: String,
+    user_agent: Option<String>,
     mode: Mode,
 }
 
@@ -228,6 +229,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
             &upstream_url,
             host.as_ref(),
             &selected_upstream.api_key,
+            selected_upstream.user_agent.as_deref(),
             attempt_body,
         ) {
             Ok(request) => request,
@@ -333,13 +335,15 @@ async fn prepare_request_body(
 }
 
 fn select_upstream(selector: &UpstreamSelector, plan: ProxyPlan) -> Option<SelectedUpstream> {
-    let (index, base_url, model, api_key, mode) = selector.next_by_mode(plan.upstream_mode)?;
+    let (index, base_url, model, api_key, user_agent, mode) =
+        selector.next_by_mode(plan.upstream_mode)?;
 
     Some(SelectedUpstream {
         index,
         base_url: base_url.to_owned(),
         model: model.to_owned(),
         api_key: api_key.to_owned(),
+        user_agent: user_agent.map(str::to_owned),
         mode,
     })
 }
@@ -381,23 +385,56 @@ fn build_proxy_request(
     upstream_url: &str,
     host: &str,
     api_key: &str,
+    upstream_user_agent: Option<&str>,
     body_bytes: Bytes,
 ) -> Result<HyperRequest<Full<Bytes>>, HttpError> {
+    let override_user_agent = resolve_upstream_user_agent(upstream_user_agent, host);
     let mut proxy_req_builder = HyperRequest::builder()
         .method(req.method())
         .uri(upstream_url);
 
     for (name, value) in req.headers() {
         let name_str = name.as_str();
-        if name_str != "host" && name_str != "authorization" && name_str != "content-length" {
+        let should_skip_original_user_agent =
+            override_user_agent.is_some() && name == http::header::USER_AGENT;
+        if name_str != "host"
+            && name_str != "authorization"
+            && name_str != "content-length"
+            && !should_skip_original_user_agent
+        {
             proxy_req_builder = proxy_req_builder.header(name, value);
         }
     }
 
     proxy_req_builder = proxy_req_builder.header("Authorization", format!("Bearer {api_key}"));
     proxy_req_builder = proxy_req_builder.header("host", host);
+    if let Some(user_agent) = override_user_agent {
+        proxy_req_builder = proxy_req_builder.header(http::header::USER_AGENT, user_agent);
+    }
 
     proxy_req_builder.body(Full::new(body_bytes))
+}
+
+fn resolve_upstream_user_agent(
+    upstream_user_agent: Option<&str>,
+    host: &str,
+) -> Option<HeaderValue> {
+    let upstream_user_agent = upstream_user_agent?.trim();
+    if upstream_user_agent.is_empty() {
+        return None;
+    }
+
+    match HeaderValue::from_str(upstream_user_agent) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::error!(
+                "Ignoring invalid upstream user_agent for host {}: {}",
+                host,
+                error
+            );
+            None
+        }
+    }
 }
 
 async fn forward_proxy_response(
@@ -692,9 +729,60 @@ const fn proxy_failure_label(kind: ProxyKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+    use http::uri::Scheme;
+    use http_body_util::Full;
+    use hyper::Request as HyperRequest;
+    use salvo::Request;
     use salvo::http::StatusCode;
 
-    use super::should_retry_upstream_status;
+    use super::{build_proxy_request, should_retry_upstream_status};
+
+    fn make_request(user_agent: &str) -> Request {
+        let req_result = HyperRequest::builder()
+            .method("POST")
+            .uri("http://localhost/claude/messages")
+            .header(http::header::USER_AGENT, user_agent)
+            .header("x-test-header", "keep-me")
+            .body(Bytes::from_static(br#"{"model":"demo"}"#));
+        let Ok(req) = req_result else {
+            panic!("failed to build test request");
+        };
+
+        Request::from_hyper(req, Scheme::HTTP)
+    }
+
+    fn build_proxy_request_for_test(
+        req: &Request,
+        upstream_user_agent: Option<&str>,
+    ) -> HyperRequest<Full<Bytes>> {
+        let proxy_req_result = build_proxy_request(
+            req,
+            "https://upstream.example.com/v1/messages",
+            "upstream.example.com",
+            "secret",
+            upstream_user_agent,
+            Bytes::new(),
+        );
+        let Ok(proxy_req) = proxy_req_result else {
+            panic!("failed to build proxy request");
+        };
+        proxy_req
+    }
+
+    fn header_value_as_str(
+        request: &HyperRequest<Full<Bytes>>,
+        header_name: http::header::HeaderName,
+    ) -> Option<&str> {
+        request.headers().get(header_name)?.to_str().ok()
+    }
+
+    fn named_header_value_as_str<'a>(
+        request: &'a HyperRequest<Full<Bytes>>,
+        header_name: &str,
+    ) -> Option<&'a str> {
+        request.headers().get(header_name)?.to_str().ok()
+    }
 
     #[test]
     fn should_retry_when_upstream_status_is_not_success() {
@@ -705,5 +793,57 @@ mod tests {
         ));
         assert!(!should_retry_upstream_status(StatusCode::OK));
         assert!(!should_retry_upstream_status(StatusCode::CREATED));
+    }
+
+    #[test]
+    fn build_proxy_request_preserves_original_user_agent_without_override() {
+        let req = make_request("Original-UA/1.0");
+        let proxy_req = build_proxy_request_for_test(&req, None);
+
+        assert_eq!(
+            header_value_as_str(&proxy_req, http::header::USER_AGENT),
+            Some("Original-UA/1.0")
+        );
+        assert_eq!(
+            named_header_value_as_str(&proxy_req, "x-test-header"),
+            Some("keep-me")
+        );
+    }
+
+    #[test]
+    fn build_proxy_request_overrides_user_agent_when_configured() {
+        let req = make_request("Original-UA/1.0");
+        let proxy_req = build_proxy_request_for_test(&req, Some("Configured-UA/2.0"));
+
+        assert_eq!(
+            header_value_as_str(&proxy_req, http::header::USER_AGENT),
+            Some("Configured-UA/2.0")
+        );
+        assert_eq!(
+            named_header_value_as_str(&proxy_req, "x-test-header"),
+            Some("keep-me")
+        );
+    }
+
+    #[test]
+    fn build_proxy_request_keeps_original_user_agent_for_blank_override() {
+        let req = make_request("Original-UA/1.0");
+        let proxy_req = build_proxy_request_for_test(&req, Some("   "));
+
+        assert_eq!(
+            header_value_as_str(&proxy_req, http::header::USER_AGENT),
+            Some("Original-UA/1.0")
+        );
+    }
+
+    #[test]
+    fn build_proxy_request_keeps_original_user_agent_for_invalid_override() {
+        let req = make_request("Original-UA/1.0");
+        let proxy_req = build_proxy_request_for_test(&req, Some("bad\r\nua"));
+
+        assert_eq!(
+            header_value_as_str(&proxy_req, http::header::USER_AGENT),
+            Some("Original-UA/1.0")
+        );
     }
 }
