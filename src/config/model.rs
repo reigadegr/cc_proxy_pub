@@ -141,6 +141,29 @@ impl fmt::Display for UpstreamModes {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GlobalUserAgentConfig {
+    pub claude: Option<String>,
+    pub codex: Option<String>,
+}
+
+impl GlobalUserAgentConfig {
+    pub fn resolve_for_mode(&self, mode: Mode) -> Option<&str> {
+        match mode {
+            Mode::AnthropicDirect => self.claude.as_deref(),
+            Mode::OpenAIResponses => self.codex.as_deref(),
+            Mode::OpenAIChat => None,
+        }
+    }
+
+    pub fn is_any_configured(&self) -> bool {
+        [self.claude.as_deref(), self.codex.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|value| !value.trim().is_empty())
+    }
+}
+
 /// 上游提供商配置
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpstreamConfig {
@@ -156,12 +179,35 @@ pub struct UpstreamConfig {
     /// API 密钥列表（支持多个 key 进行负载均衡）
     #[serde(default)]
     pub api_keys: Vec<String>,
-    /// 发往上游时覆盖的 User-Agent；未配置时透传入站请求头
-    #[serde(default, alias = "ua")]
-    pub user_agent: Option<String>,
+    /// 仅用于 Claude 接口（Anthropic 模式）的 User-Agent；优先级高于全局同类配置
+    #[serde(default, alias = "ua_claude")]
+    pub user_agent_claude: Option<String>,
+    /// 仅用于 Codex 接口（OpenAI Responses 模式）的 User-Agent；优先级高于全局同类配置
+    #[serde(default, alias = "ua_codex")]
+    pub user_agent_codex: Option<String>,
     /// 上游协议类型，支持单值或数组
     #[serde(default)]
     pub mode: UpstreamModes,
+}
+
+impl UpstreamConfig {
+    pub fn user_agent_for_mode(&self, mode: Mode) -> Option<&str> {
+        match mode {
+            Mode::AnthropicDirect => self.user_agent_claude.as_deref(),
+            Mode::OpenAIResponses => self.user_agent_codex.as_deref(),
+            Mode::OpenAIChat => None,
+        }
+    }
+
+    pub fn is_any_user_agent_configured(&self) -> bool {
+        [
+            self.user_agent_claude.as_deref(),
+            self.user_agent_codex.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.trim().is_empty())
+    }
 }
 
 /// 配置结构
@@ -176,9 +222,12 @@ pub struct Config {
     /// 是否打印响应体
     #[serde(default)]
     pub log_res_body: bool,
-    /// 发往上游时默认覆盖的全局 User-Agent；渠道未配置时使用
+    /// 仅用于 Claude 接口（Anthropic 模式）的全局 User-Agent
     #[serde(default)]
-    pub user_agent_global: Option<String>,
+    pub user_agent_global_claude: Option<String>,
+    /// 仅用于 Codex 接口（OpenAI Responses 模式）的全局 User-Agent
+    #[serde(default)]
+    pub user_agent_global_codex: Option<String>,
     /// 上游提供商配置列表（支持多个上游负载均衡）
     #[serde(default)]
     pub upstream: Vec<UpstreamConfig>,
@@ -224,8 +273,18 @@ impl Default for UpstreamConfig {
             base_url: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
-            user_agent: None,
+            user_agent_claude: None,
+            user_agent_codex: None,
             mode: UpstreamModes::default(),
+        }
+    }
+}
+
+impl Config {
+    pub fn global_user_agent_config(&self) -> GlobalUserAgentConfig {
+        GlobalUserAgentConfig {
+            claude: self.user_agent_global_claude.clone(),
+            codex: self.user_agent_global_codex.clone(),
         }
     }
 }
@@ -326,41 +385,52 @@ mod tests {
                 base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
-                user_agent = "Claude-Code/1.0.84"
+                user_agent_claude = "Claude-Code/1.0.84"
+                user_agent_codex = "Codex/0.31.0"
             "#,
         )
         .unwrap();
 
         assert_eq!(
-            config.upstream[0].user_agent.as_deref(),
+            config.upstream[0].user_agent_claude.as_deref(),
             Some("Claude-Code/1.0.84")
+        );
+        assert_eq!(
+            config.upstream[0].user_agent_codex.as_deref(),
+            Some("Codex/0.31.0")
         );
     }
 
     #[test]
-    fn upstream_user_agent_alias_ua_still_deserializes() {
+    fn upstream_user_agent_aliases_still_deserialize() {
         let config: Config = toml::from_str(
             r#"
                 [[upstream]]
                 base_url = "https://example.com"
                 model = "test-model"
                 api_keys = ["test-key"]
-                ua = "Claude-Code/1.0.84"
+                ua_claude = "Claude-Code/1.0.84"
+                ua_codex = "Codex/0.31.0"
             "#,
         )
         .unwrap();
 
         assert_eq!(
-            config.upstream[0].user_agent.as_deref(),
+            config.upstream[0].user_agent_claude.as_deref(),
             Some("Claude-Code/1.0.84")
+        );
+        assert_eq!(
+            config.upstream[0].user_agent_codex.as_deref(),
+            Some("Codex/0.31.0")
         );
     }
 
     #[test]
-    fn global_user_agent_deserializes_when_present() {
+    fn mode_specific_global_user_agents_deserialize_when_present() {
         let config: Config = toml::from_str(
             r#"
-                user_agent_global = "Claude-Code/9.9.9"
+                user_agent_global_claude = "Claude-Global/9.9.9"
+                user_agent_global_codex = "Codex-Global/9.9.9"
 
                 [[upstream]]
                 base_url = "https://example.com"
@@ -371,8 +441,36 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            config.user_agent_global.as_deref(),
-            Some("Claude-Code/9.9.9")
+            config.user_agent_global_claude.as_deref(),
+            Some("Claude-Global/9.9.9")
+        );
+        assert_eq!(
+            config.user_agent_global_codex.as_deref(),
+            Some("Codex-Global/9.9.9")
+        );
+    }
+
+    #[test]
+    fn upstream_mode_specific_user_agents_deserialize_when_present() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                user_agent_claude = "Claude-Upstream/1.0"
+                user_agent_codex = "Codex-Upstream/1.0"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.upstream[0].user_agent_claude.as_deref(),
+            Some("Claude-Upstream/1.0")
+        );
+        assert_eq!(
+            config.upstream[0].user_agent_codex.as_deref(),
+            Some("Codex-Upstream/1.0")
         );
     }
 

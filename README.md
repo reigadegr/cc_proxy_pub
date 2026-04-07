@@ -139,8 +139,8 @@ port = 9066
 log_req_body = false
 # 是否打印响应体
 log_res_body = false
-# 全局默认 User-Agent；渠道未配置 user_agent 时使用
-user_agent_global = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_global_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)"
 
 # 上游 1
 [[upstream]]
@@ -148,7 +148,8 @@ enable = true
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
-user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该上游
 # 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"]
@@ -159,7 +160,8 @@ user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
-# user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
+# user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+# user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]
@@ -195,13 +197,15 @@ cargo r /path/to/config.toml
 | `base_url` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
-| `user_agent` | `String` | 可选，自定义发往该上游的 `User-Agent`；优先级高于顶层 `user_agent_global` |
+| `user_agent_claude` | `String` | 可选，该 upstream 在 Claude 接口（`anthropic` 模式）下使用的 `User-Agent`；优先级高于全局 `user_agent_global_claude` |
+| `user_agent_codex` | `String` | 可选，该 upstream 在 Codex 接口（`openai_responses` 模式）下使用的 `User-Agent`；优先级高于全局 `user_agent_global_codex` |
 
 ### 🌍 全局请求头配置
 
 | 字段 | 类型 | 说明 |
 |:-----|:-----|:-----|
-| `user_agent_global` | `String` | 可选，发往所有上游的默认 `User-Agent`；若渠道未配置 `user_agent`，则使用该值；再否则透传原始请求头 |
+| `user_agent_global_claude` | `String` | 可选，仅对 Claude 接口（`anthropic` 模式）生效的全局 `User-Agent` |
+| `user_agent_global_codex` | `String` | 可选，仅对 Codex 接口（`openai_responses` 模式）生效的全局 `User-Agent` |
 
 ### 🌐 服务监听配置
 

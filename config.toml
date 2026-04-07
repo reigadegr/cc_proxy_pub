@@ -10,8 +10,10 @@ port = 9066
 log_req_body = false
 # 是否打印响应体
 log_res_body = false
-# 全局默认 User-Agent；渠道未配置 user_agent 时使用
-user_agent_global = "Claude-Code/1.0.84 (Linux; Android 14)"
+# Claude 接口（Anthropic 模式）专属 User-Agent
+user_agent_global_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+# Codex 接口（OpenAI Responses 模式）专属 User-Agent
+user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)"
 
 # Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
@@ -19,7 +21,10 @@ enable = true
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
-user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
+# Claude 请求命中该 upstream 时使用
+user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+# Codex 请求命中该 upstream 时使用
+user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该 upstream
 # 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"]
@@ -30,7 +35,8 @@ user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
 # base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
-# user_agent = "Claude-Code/1.0.84 (Linux; Android 14)"
+# user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+# user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
 # openai_chat 暂未适配
 
