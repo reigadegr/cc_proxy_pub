@@ -10,6 +10,8 @@ port = 9066
 log_req_body = false
 # 是否打印响应体
 log_res_body = false
+# 全局默认 User-Agent；渠道未配置 user_agent 时使用
+user_agent_global = "Claude-Code/1.0.84 (Linux; Android 14)"
 
 # Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]

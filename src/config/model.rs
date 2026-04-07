@@ -176,6 +176,9 @@ pub struct Config {
     /// 是否打印响应体
     #[serde(default)]
     pub log_res_body: bool,
+    /// 发往上游时默认覆盖的全局 User-Agent；渠道未配置时使用
+    #[serde(default)]
+    pub user_agent_global: Option<String>,
     /// 上游提供商配置列表（支持多个上游负载均衡）
     #[serde(default)]
     pub upstream: Vec<UpstreamConfig>,
@@ -350,6 +353,26 @@ mod tests {
         assert_eq!(
             config.upstream[0].user_agent.as_deref(),
             Some("Claude-Code/1.0.84")
+        );
+    }
+
+    #[test]
+    fn global_user_agent_deserializes_when_present() {
+        let config: Config = toml::from_str(
+            r#"
+                user_agent_global = "Claude-Code/9.9.9"
+
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.user_agent_global.as_deref(),
+            Some("Claude-Code/9.9.9")
         );
     }
 

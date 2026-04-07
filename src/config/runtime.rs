@@ -24,7 +24,9 @@ impl AtomicConfig {
     pub fn init() -> Self {
         let config_path = resolve_config_path();
         let config = load_initial_config(&config_path);
-        let upstream_selector = UpstreamSelector::new(config.upstream.clone()).map(Arc::new);
+        let upstream_selector =
+            UpstreamSelector::new(config.user_agent_global.clone(), config.upstream.clone())
+                .map(Arc::new);
 
         Self {
             inner: ArcSwap::from(Arc::new(config)),
@@ -54,19 +56,25 @@ impl AtomicConfig {
 
                 let port_changed = old.port != new_config.port;
                 let upstream_changed = old.upstream != new_config.upstream;
+                let user_agent_global_changed =
+                    old.user_agent_global != new_config.user_agent_global;
                 let optimizations_changed = old.optimizations != new_config.optimizations;
                 let log_req_body_changed = old.log_req_body != new_config.log_req_body;
                 let log_res_body_changed = old.log_res_body != new_config.log_res_body;
                 self.inner.store(Arc::new(new_config.clone()));
 
-                if upstream_changed {
-                    let new_selector =
-                        UpstreamSelector::new(new_config.upstream.clone()).map(Arc::new);
+                if upstream_changed || user_agent_global_changed {
+                    let new_selector = UpstreamSelector::new(
+                        new_config.user_agent_global.clone(),
+                        new_config.upstream.clone(),
+                    )
+                    .map(Arc::new);
                     self.upstream_selector.store(Arc::new(new_selector));
                 }
 
                 if port_changed
                     || upstream_changed
+                    || user_agent_global_changed
                     || optimizations_changed
                     || log_req_body_changed
                     || log_res_body_changed
@@ -81,6 +89,13 @@ impl AtomicConfig {
 
                     if upstream_changed {
                         log_upstream_change(&old.upstream, &new_config.upstream);
+                    }
+
+                    if user_agent_global_changed {
+                        info!(
+                            "user_agent_global: {:?}→{:?}",
+                            old.user_agent_global, new_config.user_agent_global
+                        );
                     }
 
                     if optimizations_changed {
@@ -117,9 +132,13 @@ impl AtomicConfig {
                 }
 
                 info!(
-                    "📋 当前配置: upstream={} 个（启用 {} 个）",
+                    "📋 当前配置: upstream={} 个（启用 {} 个）, user_agent_global_configured={}",
                     new_config.upstream.len(),
-                    enabled_upstream_count(&new_config.upstream)
+                    enabled_upstream_count(&new_config.upstream),
+                    new_config
+                        .user_agent_global
+                        .as_deref()
+                        .is_some_and(|value| !value.trim().is_empty())
                 );
             }
             Err(error) => {

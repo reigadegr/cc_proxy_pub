@@ -139,6 +139,8 @@ port = 9066
 log_req_body = false
 # 是否打印响应体
 log_res_body = false
+# 全局默认 User-Agent；渠道未配置 user_agent 时使用
+user_agent_global = "Claude-Code/1.0.84 (Linux; Android 14)"
 
 # 上游 1
 [[upstream]]
@@ -193,7 +195,13 @@ cargo r /path/to/config.toml
 | `base_url` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
-| `user_agent` | `String` | 可选，自定义发往该上游的 `User-Agent`；未配置时透传原始请求头 |
+| `user_agent` | `String` | 可选，自定义发往该上游的 `User-Agent`；优先级高于顶层 `user_agent_global` |
+
+### 🌍 全局请求头配置
+
+| 字段 | 类型 | 说明 |
+|:-----|:-----|:-----|
+| `user_agent_global` | `String` | 可选，发往所有上游的默认 `User-Agent`；若渠道未配置 `user_agent`，则使用该值；再否则透传原始请求头 |
 
 ### 🌐 服务监听配置
 

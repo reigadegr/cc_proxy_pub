@@ -20,6 +20,7 @@ mod tests {
         let input = r#"port=19066
 log_req_body=false
 log_res_body =false
+user_agent_global="Global-UA/1.0"
 [[upstream]]
 enable=true
 base_url= "https://example.com"
@@ -33,6 +34,7 @@ user_agent="Device-A/1.0"
         assert!(output.contains("port = 19066"));
         assert!(output.contains("log_req_body = false"));
         assert!(output.contains("log_res_body = false"));
+        assert!(output.contains("user_agent_global = \"Global-UA/1.0\""));
         assert!(output.contains("enable = true"));
         assert!(output.contains("base_url = \"https://example.com\""));
         assert!(output.contains("model = \"m\""));

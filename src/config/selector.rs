@@ -15,6 +15,8 @@ type UpstreamSelection<'a> = (usize, &'a str, &'a str, &'a str, Option<&'a str>,
 pub struct UpstreamSelector {
     /// 上游配置列表
     upstreams: Vec<UpstreamConfig>,
+    /// 全局默认 User-Agent
+    global_user_agent: Option<String>,
     /// `anthropic` 模式独立轮询计数
     next_index_anthropic: AtomicUsize,
     /// `openai_responses` 模式独立轮询计数
@@ -25,12 +27,13 @@ pub struct UpstreamSelector {
 
 impl UpstreamSelector {
     /// 创建新的 Upstream 选择器
-    pub fn new(upstreams: Vec<UpstreamConfig>) -> Option<Self> {
+    pub fn new(global_user_agent: Option<String>, upstreams: Vec<UpstreamConfig>) -> Option<Self> {
         if upstreams.is_empty() {
             return None;
         }
         Some(Self {
             upstreams,
+            global_user_agent,
             next_index_anthropic: AtomicUsize::new(0),
             next_index_openai_responses: AtomicUsize::new(0),
             next_index_openai_chat: AtomicUsize::new(0),
@@ -110,7 +113,10 @@ impl UpstreamSelector {
             &upstream.base_url,
             &upstream.model,
             api_key,
-            upstream.user_agent.as_deref(),
+            upstream
+                .user_agent
+                .as_deref()
+                .or(self.global_user_agent.as_deref()),
             expected_mode,
         ))
     }
@@ -148,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_empty_upstreams_returns_none() {
-        let selector = UpstreamSelector::new(Vec::new());
+        let selector = UpstreamSelector::new(None, Vec::new());
         // new() 返回 None 当输入为空时
         assert!(selector.is_none());
     }
@@ -156,7 +162,8 @@ mod tests {
     #[test]
     fn test_next_by_mode_only_returns_matching_upstreams() {
         let upstreams = create_test_upstreams();
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         let (idx0, _, _, key0, user_agent0, mode0) = selector
             .next_by_mode(Mode::OpenAIResponses)
@@ -203,7 +210,8 @@ mod tests {
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         let (idx0, _, _, key0, user_agent0, mode0) = selector
             .next_by_mode(Mode::OpenAIResponses)
@@ -258,7 +266,8 @@ mod tests {
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         let (idx, base_url, model, key, user_agent, mode) = selector
             .next_by_mode(Mode::OpenAIResponses)
@@ -282,7 +291,8 @@ mod tests {
             user_agent: None,
             mode: vec![Mode::OpenAIResponses].into(),
         }];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         assert!(selector.next_by_mode(Mode::OpenAIResponses).is_none());
     }
@@ -307,7 +317,8 @@ mod tests {
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         let (anthropic_idx, _, _, anthropic_key, anthropic_user_agent, anthropic_mode) = selector
             .next_by_mode(Mode::AnthropicDirect)
@@ -364,7 +375,8 @@ mod tests {
                 mode: vec![Mode::OpenAIResponses].into(),
             },
         ];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 2);
         assert_eq!(selector.matching_count_by_mode(Mode::OpenAIResponses), 1);
@@ -381,12 +393,53 @@ mod tests {
             user_agent: Some("Device-D/1.0".to_string()),
             mode: vec![Mode::AnthropicDirect].into(),
         }];
-        let selector = UpstreamSelector::new(upstreams).expect("测试数据已确保 upstreams 非空");
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
 
         let (_, _, _, _, user_agent, _) = selector
             .next_by_mode(Mode::AnthropicDirect)
             .expect("应能返回 upstream 的 user_agent");
 
         assert_eq!(user_agent, Some("Device-D/1.0"));
+    }
+
+    #[test]
+    fn test_next_by_mode_falls_back_to_global_user_agent() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            base_url: "https://global-ua.example.com".to_string(),
+            model: "ua-model".to_string(),
+            api_keys: vec!["ua-key".to_string()],
+            user_agent: None,
+            mode: vec![Mode::AnthropicDirect].into(),
+        }];
+        let selector = UpstreamSelector::new(Some("Global-UA/1.0".to_string()), upstreams)
+            .expect("测试数据已确保 upstreams 非空");
+
+        let (_, _, _, _, user_agent, _) = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("应能返回全局 user_agent");
+
+        assert_eq!(user_agent, Some("Global-UA/1.0"));
+    }
+
+    #[test]
+    fn test_next_by_mode_prefers_upstream_user_agent_over_global() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            base_url: "https://override-ua.example.com".to_string(),
+            model: "ua-model".to_string(),
+            api_keys: vec!["ua-key".to_string()],
+            user_agent: Some("Upstream-UA/2.0".to_string()),
+            mode: vec![Mode::AnthropicDirect].into(),
+        }];
+        let selector = UpstreamSelector::new(Some("Global-UA/1.0".to_string()), upstreams)
+            .expect("测试数据已确保 upstreams 非空");
+
+        let (_, _, _, _, user_agent, _) = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("应能返回渠道 user_agent");
+
+        assert_eq!(user_agent, Some("Upstream-UA/2.0"));
     }
 }
