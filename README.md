@@ -206,10 +206,10 @@ enable_filepath_extraction_mock = true
 
 ```bash
 # 使用默认配置（config.toml）
-cargo r
+cargo run -p cli_req_refiner
 
 # 指定配置文件
-cargo r /path/to/config.toml
+cargo run -p cli_req_refiner -- /path/to/config.toml
 ```
 
 服务默认监听 `0.0.0.0:9066`，可通过 `config.toml` 顶层 `port` 修改。

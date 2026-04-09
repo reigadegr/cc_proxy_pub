@@ -69,19 +69,19 @@ git config user.email
 ## 架构概览
 
 ### 入口
-- **`src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9066`）启动 Salvo 服务器
+- **`app/src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9066`）启动 Salvo 服务器
 
-### 配置系统 (`src/config/`)
+### 配置系统 (`app/src/config/`)
 - **`mod.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载；`UpstreamConfig` 定义上游提供商；`OptimizationConfig` 控制拦截行为
 - **`selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys
 - **`format.rs`** - TOML 格式化工具
 
-### 网关层 (`src/gateway/`)
+### 网关层 (`app/src/gateway/`)
 - **`mod.rs`** - `GatewayHandler` 持有共享的 `HttpClient`（hyper + HTTPS）和 `RequestStats`
 - **`service.rs`** - 请求处理与编排
 - **`handler/mod.rs`** - 顶层处理器 `claude_proxy` 负责路由请求
 
-### 请求处理器 (`src/gateway/handler/`)
+### 请求处理器 (`app/src/gateway/handler/`)
 - **`mod.rs`** - 主处理逻辑
 - **`request.rs`** - 出站请求构建
 - **`response.rs`** - 响应流式返回与处理
@@ -91,7 +91,7 @@ git config user.email
 - **`thinking_patch.rs`** - 思考模式补丁
 - **`utils.rs`** - 处理器工具函数
 
-### 优化层 (`src/gateway/optimization/`)
+### 优化层 (`app/src/gateway/optimization/`)
 - **`mod.rs`** - 优化编排
 - **`detection.rs`** - 请求类型检测（配额检查、标题生成等）
 - **`response_builder.rs`** - 拦截请求的 mock 响应构建器
