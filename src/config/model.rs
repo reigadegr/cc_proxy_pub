@@ -151,8 +151,7 @@ impl GlobalUserAgentConfig {
     pub fn resolve_for_mode(&self, mode: Mode) -> Option<&str> {
         match mode {
             Mode::AnthropicDirect => self.claude.as_deref(),
-            Mode::OpenAIResponses => self.codex.as_deref(),
-            Mode::OpenAIChat => None,
+            Mode::OpenAIResponses | Mode::OpenAIChat => self.codex.as_deref(),
         }
     }
 
@@ -182,7 +181,7 @@ pub struct UpstreamConfig {
     /// 仅用于 Claude 接口（Anthropic 模式）的 User-Agent；优先级高于全局同类配置
     #[serde(default, alias = "ua_claude")]
     pub user_agent_claude: Option<String>,
-    /// 仅用于 Codex 接口（OpenAI Responses 模式）的 User-Agent；优先级高于全局同类配置
+    /// 仅用于 Codex 接口（OpenAI Responses / Chat 模式）的 User-Agent；优先级高于全局同类配置
     #[serde(default, alias = "ua_codex")]
     pub user_agent_codex: Option<String>,
     /// 上游协议类型，支持单值或数组
@@ -194,8 +193,7 @@ impl UpstreamConfig {
     pub fn user_agent_for_mode(&self, mode: Mode) -> Option<&str> {
         match mode {
             Mode::AnthropicDirect => self.user_agent_claude.as_deref(),
-            Mode::OpenAIResponses => self.user_agent_codex.as_deref(),
-            Mode::OpenAIChat => None,
+            Mode::OpenAIResponses | Mode::OpenAIChat => self.user_agent_codex.as_deref(),
         }
     }
 
@@ -225,7 +223,7 @@ pub struct Config {
     /// 仅用于 Claude 接口（Anthropic 模式）的全局 User-Agent
     #[serde(default)]
     pub user_agent_global_claude: Option<String>,
-    /// 仅用于 Codex 接口（OpenAI Responses 模式）的全局 User-Agent
+    /// 仅用于 Codex 接口（OpenAI Responses / Chat 模式）的全局 User-Agent
     #[serde(default)]
     pub user_agent_global_codex: Option<String>,
     /// 上游提供商配置列表（支持多个上游负载均衡）
@@ -475,6 +473,47 @@ mod tests {
     }
 
     #[test]
+    fn global_user_agent_config_reuses_codex_for_openai_chat() {
+        let global = super::GlobalUserAgentConfig {
+            claude: Some("Claude-Global/1.0".to_string()),
+            codex: Some("Codex-Global/1.0".to_string()),
+        };
+
+        assert_eq!(
+            global.resolve_for_mode(Mode::OpenAIResponses),
+            Some("Codex-Global/1.0")
+        );
+        assert_eq!(
+            global.resolve_for_mode(Mode::OpenAIChat),
+            Some("Codex-Global/1.0")
+        );
+    }
+
+    #[test]
+    fn upstream_user_agent_reuses_codex_for_openai_chat() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                user_agent_claude = "Claude-Upstream/1.0"
+                user_agent_codex = "Codex-Upstream/1.0"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.upstream[0].user_agent_for_mode(Mode::OpenAIResponses),
+            Some("Codex-Upstream/1.0")
+        );
+        assert_eq!(
+            config.upstream[0].user_agent_for_mode(Mode::OpenAIChat),
+            Some("Codex-Upstream/1.0")
+        );
+    }
+
+    #[test]
     fn port_defaults_to_9066() {
         let config: Config = toml::from_str(
             r#"
@@ -487,6 +526,33 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.port, default_port());
+    }
+
+    #[test]
+    fn openai_chat_reuses_codex_user_agent_configuration() {
+        let config: Config = toml::from_str(
+            r#"
+                user_agent_global_codex = "Codex-Global/9.9.9"
+
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+                user_agent_codex = "Codex-Upstream/1.0"
+                mode = ["openai_chat"]
+            "#,
+        )
+        .unwrap();
+
+        let global_agents = config.global_user_agent_config();
+        assert_eq!(
+            global_agents.resolve_for_mode(Mode::OpenAIChat),
+            Some("Codex-Global/9.9.9")
+        );
+        assert_eq!(
+            config.upstream[0].user_agent_for_mode(Mode::OpenAIChat),
+            Some("Codex-Upstream/1.0")
+        );
     }
 
     #[test]

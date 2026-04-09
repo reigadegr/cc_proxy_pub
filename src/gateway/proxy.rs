@@ -29,8 +29,8 @@ use crate::{
 
 #[derive(Clone, Copy)]
 enum ProxyKind {
-    Claude,
-    Codex,
+    Anthropic,
+    OpenAI,
 }
 
 #[derive(Clone, Copy)]
@@ -77,7 +77,7 @@ struct RetryContext<'a> {
     max_attempts: usize,
 }
 
-pub async fn handle_claude(
+pub async fn handle_anthropic(
     req: &mut Request,
     res: &mut Response,
     config: &Arc<AtomicConfig>,
@@ -86,7 +86,7 @@ pub async fn handle_claude(
 ) {
     run_proxy(
         ProxyPlan {
-            kind: ProxyKind::Claude,
+            kind: ProxyKind::Anthropic,
             upstream_mode: Mode::AnthropicDirect,
             missing_upstream_message: "No upstream configured with mode including 'anthropic'",
         },
@@ -99,25 +99,34 @@ pub async fn handle_claude(
     .await;
 }
 
-pub async fn handle_codex(
+pub async fn handle_openai(
     req: &mut Request,
     res: &mut Response,
     config: &Arc<AtomicConfig>,
     client: &Arc<HttpClient>,
+    mode: Mode,
 ) {
-    run_proxy(
-        ProxyPlan {
-            kind: ProxyKind::Codex,
+    run_proxy(proxy_plan_for_mode(mode), req, res, config, None, client).await;
+}
+
+const fn proxy_plan_for_mode(mode: Mode) -> ProxyPlan {
+    match mode {
+        Mode::AnthropicDirect => ProxyPlan {
+            kind: ProxyKind::Anthropic,
+            upstream_mode: Mode::AnthropicDirect,
+            missing_upstream_message: "No upstream configured with mode including 'anthropic'",
+        },
+        Mode::OpenAIResponses => ProxyPlan {
+            kind: ProxyKind::OpenAI,
             upstream_mode: Mode::OpenAIResponses,
             missing_upstream_message: "No upstream configured with mode including 'openai_responses'",
         },
-        req,
-        res,
-        config,
-        None,
-        client,
-    )
-    .await;
+        Mode::OpenAIChat => ProxyPlan {
+            kind: ProxyKind::OpenAI,
+            upstream_mode: Mode::OpenAIChat,
+            missing_upstream_message: "No upstream configured with mode including 'openai_chat'",
+        },
+    }
 }
 
 async fn run_proxy(
@@ -215,8 +224,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
         log_selected_upstream(plan.kind, &selected_upstream, attempt, ctx.max_attempts);
 
         let attempt_body = apply_upstream_model(ctx.body_bytes.clone(), &selected_upstream.model);
-        let (upstream_url, host) =
-            make_proxy_url(&selected_upstream.base_url, selected_upstream.mode, ctx.req);
+        let (upstream_url, host) = make_proxy_url(&selected_upstream.base_url, ctx.req);
 
         let proxy_req = match build_proxy_request(
             ctx.req,
@@ -289,11 +297,13 @@ fn prepare_request_body(
     let mut current = body_bytes;
     let mut token_stats_recorded = false;
 
-    if matches!(plan.kind, ProxyKind::Claude) && req_local_intercept_by_url(res, request_url, cfg) {
+    if matches!(plan.kind, ProxyKind::Anthropic)
+        && req_local_intercept_by_url(res, request_url, cfg)
+    {
         return None;
     }
 
-    if matches!(plan.kind, ProxyKind::Claude)
+    if matches!(plan.kind, ProxyKind::Anthropic)
         && !current.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&current)
         && cfg.log_req_body
@@ -301,7 +311,7 @@ fn prepare_request_body(
         log_full_body(body_str);
     }
 
-    if matches!(plan.kind, ProxyKind::Claude) && !current.is_empty() {
+    if matches!(plan.kind, ProxyKind::Anthropic) && !current.is_empty() {
         if let Ok(mut request_json) = parse_body_json(&current) {
             if req_local_intercept_from_json(res, &request_json, request_url, cfg) {
                 return None;
@@ -338,7 +348,7 @@ fn prepare_request_body(
             log_full_body(body_str);
         }
 
-        if matches!(plan.kind, ProxyKind::Claude)
+        if matches!(plan.kind, ProxyKind::Anthropic)
             && !token_stats_recorded
             && let Some(stats) = stats
         {
@@ -370,8 +380,8 @@ fn log_selected_upstream(
     total_attempts: usize,
 ) {
     let prefix = match kind {
-        ProxyKind::Claude => "🔄 选中的",
-        ProxyKind::Codex => "🔄 Codex 代理选中的",
+        ProxyKind::Anthropic => "🔄 选中的",
+        ProxyKind::OpenAI => "🔄 OpenAI 代理选中的",
     };
 
     tracing::info!(
@@ -506,14 +516,14 @@ async fn forward_proxy_response(
 
         res.body(ResBody::stream(stream));
 
-        if matches!(kind, ProxyKind::Codex) {
-            tracing::info!("=== Codex SSE 流式响应结束 ===");
+        if matches!(kind, ProxyKind::OpenAI) {
+            tracing::info!("=== OpenAI SSE 流式响应结束 ===");
         }
         return Ok(());
     }
 
-    if matches!(kind, ProxyKind::Codex) {
-        tracing::info!("=== Codex 非 SSE 响应开始 ===");
+    if matches!(kind, ProxyKind::OpenAI) {
+        tracing::info!("=== OpenAI 非 SSE 响应开始 ===");
     }
 
     let body_bytes = match BodyExt::collect(body).await {
@@ -533,15 +543,15 @@ async fn forward_proxy_response(
     let body_str = String::from_utf8_lossy(&body_bytes);
 
     if cfg.log_res_body {
-        if matches!(kind, ProxyKind::Codex) {
-            tracing::info!("=== Codex 原始上游响应 ===");
+        if matches!(kind, ProxyKind::OpenAI) {
+            tracing::info!("=== OpenAI 原始上游响应 ===");
             tracing::info!("{}", body_str);
-            tracing::info!("=== Codex 原始上游响应结束 ===");
+            tracing::info!("=== OpenAI 原始上游响应结束 ===");
         } else {
             log_full_response(&body_str);
         }
-    } else if matches!(kind, ProxyKind::Codex) {
-        tracing::info!("=== Codex 非 SSE 响应: {} bytes ===", body_bytes.len());
+    } else if matches!(kind, ProxyKind::OpenAI) {
+        tracing::info!("=== OpenAI 非 SSE 响应: {} bytes ===", body_bytes.len());
     }
 
     res.status_code(StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
@@ -716,29 +726,29 @@ fn log_transport_failure(
 
 const fn sse_passthrough_log(kind: ProxyKind) -> &'static str {
     match kind {
-        ProxyKind::Claude => "⏭️ 直接透传 Anthropic 格式 SSE 流",
-        ProxyKind::Codex => "⏭️ Codex: 直接透传 OpenAI Responses SSE 流",
+        ProxyKind::Anthropic => "⏭️ 直接透传 Anthropic 格式 SSE 流",
+        ProxyKind::OpenAI => "⏭️ 直接透传 OpenAI 格式 SSE 流",
     }
 }
 
 const fn sse_start_log(kind: ProxyKind) -> &'static str {
     match kind {
-        ProxyKind::Claude => "=== SSE 流式响应开始 ===",
-        ProxyKind::Codex => "=== Codex SSE 流式响应开始 ===",
+        ProxyKind::Anthropic => "=== SSE 流式响应开始 ===",
+        ProxyKind::OpenAI => "=== OpenAI SSE 流式响应开始 ===",
     }
 }
 
 const fn sse_error_label(kind: ProxyKind) -> &'static str {
     match kind {
-        ProxyKind::Claude => "SSE 流读取错误",
-        ProxyKind::Codex => "Codex SSE 流读取错误",
+        ProxyKind::Anthropic => "SSE 流读取错误",
+        ProxyKind::OpenAI => "OpenAI SSE 流读取错误",
     }
 }
 
 const fn proxy_failure_label(kind: ProxyKind) -> &'static str {
     match kind {
-        ProxyKind::Claude => "Proxy request failed",
-        ProxyKind::Codex => "Codex proxy request failed",
+        ProxyKind::Anthropic => "Proxy request failed",
+        ProxyKind::OpenAI => "OpenAI proxy request failed",
     }
 }
 
@@ -752,7 +762,7 @@ mod tests {
     use salvo::http::StatusCode;
 
     use super::{
-        ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body,
+        ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body, proxy_plan_for_mode,
         should_retry_upstream_status,
     };
     use crate::config::{Config, Mode, OptimizationConfig};
@@ -760,7 +770,7 @@ mod tests {
     fn make_request(user_agent: &str) -> Request {
         let req_result = HyperRequest::builder()
             .method("POST")
-            .uri("http://localhost/claude/messages")
+            .uri("http://localhost/v1/messages")
             .header(http::header::USER_AGENT, user_agent)
             .header("x-test-header", "keep-me")
             .body(Bytes::from_static(br#"{"model":"demo"}"#));
@@ -815,12 +825,30 @@ mod tests {
         }
     }
 
-    fn claude_plan() -> ProxyPlan {
-        ProxyPlan {
-            kind: ProxyKind::Claude,
-            upstream_mode: Mode::AnthropicDirect,
-            missing_upstream_message: "unused in tests",
-        }
+    fn anthropic_plan() -> ProxyPlan {
+        proxy_plan_for_mode(Mode::AnthropicDirect)
+    }
+
+    #[test]
+    fn proxy_plan_for_mode_maps_supported_modes() {
+        let anthropic = proxy_plan_for_mode(Mode::AnthropicDirect);
+        assert!(matches!(anthropic.kind, ProxyKind::Anthropic));
+        assert_eq!(anthropic.upstream_mode, Mode::AnthropicDirect);
+        assert!(anthropic.missing_upstream_message.contains("anthropic"));
+
+        let responses = proxy_plan_for_mode(Mode::OpenAIResponses);
+        assert!(matches!(responses.kind, ProxyKind::OpenAI));
+        assert_eq!(responses.upstream_mode, Mode::OpenAIResponses);
+        assert!(
+            responses
+                .missing_upstream_message
+                .contains("openai_responses")
+        );
+
+        let chat = proxy_plan_for_mode(Mode::OpenAIChat);
+        assert!(matches!(chat.kind, ProxyKind::OpenAI));
+        assert_eq!(chat.upstream_mode, Mode::OpenAIChat);
+        assert!(chat.missing_upstream_message.contains("openai_chat"));
     }
 
     #[test]
@@ -891,7 +919,7 @@ mod tests {
         let mut res = salvo::Response::new();
 
         let body = prepare_request_body(
-            claude_plan(),
+            anthropic_plan(),
             Bytes::from_static(b"not json"),
             "/v1/messages/count_tokens?foo=bar",
             &test_config(),
@@ -914,7 +942,7 @@ mod tests {
         let mut res = salvo::Response::new();
 
         let body = prepare_request_body(
-            claude_plan(),
+            anthropic_plan(),
             Bytes::new(),
             "/v1/messages/count_tokens?foo=bar",
             &test_config(),

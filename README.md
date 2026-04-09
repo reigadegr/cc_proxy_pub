@@ -6,7 +6,7 @@
 
 **高性能 AI 编码工具请求体精炼代理**
 
-> ⚠️ **适配状态**：当前已完成 **Claude Code** 的适配，**Codex 尚未适配**，后续会逐步支持。
+> ✅ **协议支持**：当前通过统一根路径同时支持 **Claude Code**、**OpenAI Responses / Codex** 与 **OpenAI Chat Completions** 请求路由。
 
 请求体精炼 · 多上游负载均衡 · 热重载配置 · Token 成本削减
 
@@ -87,13 +87,13 @@ CliReqRefiner 的核心功能——在转发到上游之前精炼请求体：
 
 ## 🚀 快速开始
 
-### 🎯 配置 Claude Code CLI
+### 🎯 配置客户端
 
-在 Claude Code CLI 配置中设置 API 端点：
+将客户端基地址直接指向代理服务根路径：
 
 ```bash
 # 方式一：环境变量
-export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:9066"
 ```
 
 或在 `~/.claude/settings.json` 中：
@@ -101,16 +101,44 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066/claude"
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9066/claude",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9066",
     "ANTHROPIC_AUTH_TOKEN": "随便填"
   }
 }
 ```
 
+路径映射规则：
+- `/v1/messages` 与 `/v1/messages/*` -> Anthropic 协议
+- `/v1/responses` -> OpenAI Responses 协议
+- `/v1/chat/completions` -> OpenAI Chat Completions 协议
+- 其他根路径会直接返回 `404`，不转发到上游
+
 其中：
-- `ANTHROPIC_BASE_URL` 指向 `http://127.0.0.1:9066/claude`
+- `ANTHROPIC_BASE_URL` 指向服务根地址 `http://127.0.0.1:9066`，不要再追加 `/claude` 或 `/codex` 前缀
 - `ANTHROPIC_AUTH_TOKEN` 可以随意填写——CliReqRefiner 转发时会覆盖它
 - 如果你修改了 `config.toml` 里的 `port`，这里也要同步改成对应端口
+
+### 🧭 统一路径路由
+
+客户端统一指向代理服务根地址，不再需要额外拼接 `/claude` 或 `/codex` 前缀。服务会根据请求路径自动选择协议与上游：
+
+| 请求路径 | 路由协议 | 说明 |
+|:---------|:---------|:-----|
+| `/v1/messages` | Anthropic | Claude Messages 主入口 |
+| `/v1/messages/*` | Anthropic | 保留 Anthropic 子路径，例如 `/v1/messages/count_tokens` |
+| `/v1/responses` | OpenAI Responses | Codex / Responses 请求 |
+| `/v1/chat/completions` | OpenAI Chat | Chat Completions 请求 |
+| 其他路径 | `404 Not Found` | 不会转发到上游 |
+
+示例：
+
+```text
+Claude Code              -> http://127.0.0.1:9066/v1/messages
+Codex / Responses client -> http://127.0.0.1:9066/v1/responses
+OpenAI Chat client       -> http://127.0.0.1:9066/v1/chat/completions
+```
+
+> 注意：代理只做**严格路径分流**与请求体精炼，不会在 Anthropic / OpenAI 协议之间做自动转换或回退。
 
 ### 📦 构建
 
@@ -140,7 +168,7 @@ log_req_body = false
 # 是否打印响应体
 log_res_body = false
 user_agent_global_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
-user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)"
+user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)" # 对 openai_responses / openai_chat 均生效
 
 # 上游 1
 [[upstream]]
@@ -149,10 +177,10 @@ base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
 user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
-user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
+user_agent_codex = "Codex/0.31.0 (Linux; Android 14)" # 对 openai_responses / openai_chat 均生效
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该上游
-# 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"]
+# 如需同时兼容多种协议，可设置 mode = ["anthropic", "openai_responses"] 或 ["anthropic", "openai_responses", "openai_chat"]
 
 # 上游 2：添加更多上游实现负载均衡
 # [[upstream]]
@@ -161,7 +189,7 @@ user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
 # user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
-# user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
+# user_agent_codex = "Codex/0.31.0 (Linux; Android 14)" # 对 openai_responses / openai_chat 均生效
 # mode = ["anthropic", "openai_responses"]  # 可选: "anthropic" | "openai_responses" | "openai_chat"
 
 [optimizations]
@@ -198,14 +226,14 @@ cargo r /path/to/config.toml
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |
 | `user_agent_claude` | `String` | 可选，该 upstream 在 Claude 接口（`anthropic` 模式）下使用的 `User-Agent`；优先级高于全局 `user_agent_global_claude` |
-| `user_agent_codex` | `String` | 可选，该 upstream 在 Codex 接口（`openai_responses` 模式）下使用的 `User-Agent`；优先级高于全局 `user_agent_global_codex` |
+| `user_agent_codex` | `String` | 可选，该 upstream 在 OpenAI 接口（`openai_responses` 与 `openai_chat` 模式）下使用的 `User-Agent`；优先级高于全局 `user_agent_global_codex` |
 
 ### 🌍 全局请求头配置
 
 | 字段 | 类型 | 说明 |
 |:-----|:-----|:-----|
 | `user_agent_global_claude` | `String` | 可选，仅对 Claude 接口（`anthropic` 模式）生效的全局 `User-Agent` |
-| `user_agent_global_codex` | `String` | 可选，仅对 Codex 接口（`openai_responses` 模式）生效的全局 `User-Agent` |
+| `user_agent_global_codex` | `String` | 可选，仅对 OpenAI 接口（`openai_responses` 与 `openai_chat` 模式）生效的全局 `User-Agent` |
 
 ### 🌐 服务监听配置
 

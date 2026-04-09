@@ -553,4 +553,105 @@ mod tests {
             .expect("应能返回 Codex 全局专属 user_agent");
         assert_eq!(codex_user_agent, Some("Codex-Global-UA/3.0"));
     }
+
+    #[test]
+    fn test_next_by_mode_returns_openai_chat_upstream_only() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                base_url: "https://responses.example.com".to_string(),
+                model: "responses-model".to_string(),
+                api_keys: vec!["responses-key".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: Some("Codex-Responses-UA/1.0".to_string()),
+                mode: vec![Mode::OpenAIResponses].into(),
+            },
+            UpstreamConfig {
+                enable: true,
+                base_url: "https://chat.example.com".to_string(),
+                model: "chat-model".to_string(),
+                api_keys: vec!["chat-key".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: Some("Codex-Chat-UA/1.0".to_string()),
+                mode: vec![Mode::OpenAIChat].into(),
+            },
+        ];
+        let selector =
+            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
+
+        let (idx, base_url, model, key, user_agent, mode) = selector
+            .next_by_mode(Mode::OpenAIChat)
+            .expect("应只选择 openai_chat upstream");
+
+        assert_eq!(idx, 1);
+        assert_eq!(base_url, "https://chat.example.com");
+        assert_eq!(model, "chat-model");
+        assert_eq!(key, "chat-key");
+        assert_eq!(user_agent, Some("Codex-Chat-UA/1.0"));
+        assert_eq!(mode, Mode::OpenAIChat);
+    }
+
+    #[test]
+    fn test_next_by_mode_uses_codex_global_user_agent_for_openai_chat() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            base_url: "https://chat.example.com".to_string(),
+            model: "chat-model".to_string(),
+            api_keys: vec!["chat-key".to_string()],
+            user_agent_claude: None,
+            user_agent_codex: None,
+            mode: vec![Mode::OpenAIChat].into(),
+        }];
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig {
+                claude: Some("Claude-Global-UA/2.0".to_string()),
+                codex: Some("Codex-Global-UA/3.0".to_string()),
+            },
+            upstreams,
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        let (_, _, _, _, user_agent, mode) = selector
+            .next_by_mode(Mode::OpenAIChat)
+            .expect("应能返回 OpenAI Chat 的全局 codex user_agent");
+
+        assert_eq!(user_agent, Some("Codex-Global-UA/3.0"));
+        assert_eq!(mode, Mode::OpenAIChat);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod openai_chat_tests {
+    use super::*;
+
+    #[test]
+    fn test_next_by_mode_returns_codex_user_agent_for_openai_chat() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            base_url: "https://chat.example.com".to_string(),
+            model: "chat-model".to_string(),
+            api_keys: vec!["chat-key".to_string()],
+            user_agent_claude: None,
+            user_agent_codex: Some("Codex-UA/4.0".to_string()),
+            mode: vec![Mode::OpenAIChat].into(),
+        }];
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig {
+                claude: None,
+                codex: Some("Codex-Global-UA/5.0".to_string()),
+            },
+            upstreams,
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        let (idx, _, _, key, user_agent, mode) = selector
+            .next_by_mode(Mode::OpenAIChat)
+            .expect("应能选到 openai_chat upstream");
+
+        assert_eq!(idx, 0);
+        assert_eq!(key, "chat-key");
+        assert_eq!(user_agent, Some("Codex-UA/4.0"));
+        assert_eq!(mode, Mode::OpenAIChat);
+    }
 }

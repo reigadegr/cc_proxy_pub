@@ -10,7 +10,7 @@ use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
 
 use crate::{
-    config::{Config, Mode},
+    config::Config,
     gateway::{
         handler::{
             content_filter::filter_content_strings_in_json,
@@ -124,7 +124,7 @@ pub fn req_local_intercept_from_json(
     true
 }
 
-pub fn make_proxy_url<'a>(base_url: &'a str, mode: Mode, req: &Request) -> (String, Cow<'a, str>) {
+pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, Cow<'a, str>) {
     // 解析 base_url
     let host_str = base_url
         .strip_prefix("https://")
@@ -162,12 +162,6 @@ pub fn make_proxy_url<'a>(base_url: &'a str, mode: Mode, req: &Request) -> (Stri
     let mut upstream_url = format!("{host}{new_path}");
     upstream_url = upstream_url.replace("?beta=true", "");
 
-    // OpenAI Responses upstream 需要将 messages 路径改写为 responses
-    if matches!(mode, Mode::OpenAIResponses) {
-        upstream_url = upstream_url.replace("messages", "responses");
-    }
-    upstream_url = upstream_url.replace("claude/", "");
-    upstream_url = upstream_url.replace("codex/", "");
     while upstream_url.contains("//") {
         upstream_url = upstream_url.replace("//", "/");
     }
@@ -188,4 +182,70 @@ pub fn log_request_meta(method: &str, uri: &str, headers: &HeaderMap) {
         }
     }
     info!("=== 请求头结束 ===");
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use http::uri::Scheme;
+    use hyper::Request as HyperRequest;
+    use salvo::Request;
+
+    use super::make_proxy_url;
+
+    fn request_from_uri(uri: &str) -> Request {
+        let request_result = HyperRequest::builder().uri(uri).body(Bytes::new());
+        let Ok(request) = request_result else {
+            panic!("failed to build request");
+        };
+        Request::from_hyper(request, Scheme::HTTP)
+    }
+
+    #[test]
+    fn make_proxy_url_preserves_anthropic_root_path() {
+        let req = request_from_uri("http://localhost/v1/messages");
+        let (url, host) = make_proxy_url("https://upstream.example.com", &req);
+
+        assert_eq!(url, "https://upstream.example.com/v1/messages");
+        assert_eq!(host, "upstream.example.com");
+    }
+
+    #[test]
+    fn make_proxy_url_preserves_anthropic_subpath_and_query() {
+        let req = request_from_uri("http://localhost/v1/messages/count_tokens?foo=bar");
+        let (url, _) = make_proxy_url("https://upstream.example.com", &req);
+
+        assert_eq!(
+            url,
+            "https://upstream.example.com/v1/messages/count_tokens?foo=bar"
+        );
+    }
+
+    #[test]
+    fn make_proxy_url_preserves_openai_responses_path() {
+        let req = request_from_uri("http://localhost/v1/responses");
+        let (url, _) = make_proxy_url("https://upstream.example.com", &req);
+
+        assert_eq!(url, "https://upstream.example.com/v1/responses");
+    }
+
+    #[test]
+    fn make_proxy_url_preserves_openai_chat_path() {
+        let req = request_from_uri("http://localhost/v1/chat/completions");
+        let (url, _) = make_proxy_url("https://upstream.example.com", &req);
+
+        assert_eq!(url, "https://upstream.example.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn make_proxy_url_joins_base_path_prefixes() {
+        let req = request_from_uri("http://localhost/v1/messages?foo=bar");
+        let (url, host) = make_proxy_url("https://upstream.example.com/prefix/api", &req);
+
+        assert_eq!(
+            url,
+            "https://upstream.example.com/prefix/api/v1/messages?foo=bar"
+        );
+        assert_eq!(host, "upstream.example.com");
+    }
 }
