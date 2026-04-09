@@ -758,8 +758,7 @@ mod tests {
     use http::uri::Scheme;
     use http_body_util::Full;
     use hyper::Request as HyperRequest;
-    use salvo::Request;
-    use salvo::http::StatusCode;
+    use salvo::{Request, http::StatusCode};
 
     use super::{
         ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body, proxy_plan_for_mode,

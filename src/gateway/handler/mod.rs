@@ -24,6 +24,22 @@ enum RouteTarget {
     OpenAIChat,
 }
 
+fn rewrite_responses_alias(req: &mut Request) {
+    if req.uri().path() != "/responses" {
+        return;
+    }
+
+    let rewritten = req.uri().query().map_or_else(
+        || "/v1/responses".to_owned(),
+        |query| format!("/v1/responses?{query}"),
+    );
+    let Ok(rewritten) = rewritten.parse() else {
+        tracing::error!("Failed to parse rewritten /responses alias URI: {rewritten}");
+        return;
+    };
+    *req.uri_mut() = rewritten;
+}
+
 fn classify_request_path(path: &str) -> Option<RouteTarget> {
     if path == "/v1/messages" || path.starts_with("/v1/messages/") {
         Some(RouteTarget::Anthropic)
@@ -36,8 +52,7 @@ fn classify_request_path(path: &str) -> Option<RouteTarget> {
     }
 }
 
-#[handler]
-pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+async fn dispatch_proxy(req: &mut Request, depot: &Depot, res: &mut Response) {
     let Some(target) = classify_request_path(req.uri().path()) else {
         tracing::info!("Rejecting unsupported proxy path: {}", req.uri().path());
         res.status_code(StatusCode::NOT_FOUND);
@@ -64,9 +79,34 @@ pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
 }
 
+#[handler]
+pub async fn responses_alias_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    rewrite_responses_alias(req);
+    dispatch_proxy(req, depot, res).await;
+}
+
+#[handler]
+pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    dispatch_proxy(req, depot, res).await;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{RouteTarget, classify_request_path};
+    use salvo::{
+        Request, Router, Service, handler,
+        http::{StatusCode, uri::Scheme},
+        test::TestClient,
+    };
+
+    use super::{RouteTarget, classify_request_path, rewrite_responses_alias};
+
+    fn request_from_uri(uri: &str) -> Request {
+        let request = match hyper::Request::builder().uri(uri).body(bytes::Bytes::new()) {
+            Ok(request) => request,
+            Err(error) => panic!("request should build: {error}"),
+        };
+        Request::from_hyper(request, Scheme::HTTP)
+    }
 
     #[test]
     fn classify_request_path_maps_supported_roots() {
@@ -90,8 +130,72 @@ mod tests {
 
     #[test]
     fn classify_request_path_rejects_unsupported_roots() {
+        assert_eq!(classify_request_path("/responses"), None);
         assert_eq!(classify_request_path("/claude/messages"), None);
         assert_eq!(classify_request_path("/codex/responses"), None);
+        assert_eq!(classify_request_path("/responses/foo"), None);
         assert_eq!(classify_request_path("/foo"), None);
+    }
+
+    #[test]
+    fn rewrite_responses_alias_normalizes_path_before_classification() {
+        let mut req = request_from_uri("http://localhost/responses?stream=true");
+
+        rewrite_responses_alias(&mut req);
+
+        assert_eq!(req.uri().path(), "/v1/responses");
+        assert_eq!(req.uri().query(), Some("stream=true"));
+        assert_eq!(
+            classify_request_path(req.uri().path()),
+            Some(RouteTarget::OpenAIResponses)
+        );
+    }
+
+    #[test]
+    fn rewrite_responses_alias_preserves_other_short_paths_for_404_handling() {
+        let mut req = request_from_uri("http://localhost/chat/completions");
+
+        rewrite_responses_alias(&mut req);
+
+        assert_eq!(req.uri().path(), "/chat/completions");
+        assert_eq!(classify_request_path(req.uri().path()), None);
+    }
+
+    #[tokio::test]
+    async fn route_table_only_adds_exact_responses_short_path() {
+        #[handler]
+        async fn alias_marker() {}
+
+        #[handler]
+        async fn v1_marker() {}
+
+        let service = Service::new(
+            Router::new()
+                .push(Router::with_path("responses").goal(alias_marker))
+                .push(Router::with_path("v1/{**rest}").goal(v1_marker)),
+        );
+
+        let alias = TestClient::get("http://127.0.0.1:5801/responses")
+            .send(&service)
+            .await;
+        assert_eq!(alias.status_code, Some(StatusCode::OK));
+
+        let canonical = TestClient::get("http://127.0.0.1:5801/v1/responses")
+            .send(&service)
+            .await;
+        assert_eq!(canonical.status_code, Some(StatusCode::OK));
+
+        let other_short_path = TestClient::get("http://127.0.0.1:5801/messages")
+            .send(&service)
+            .await;
+        assert_eq!(other_short_path.status_code, Some(StatusCode::NOT_FOUND));
+
+        let unrelated_short_path = TestClient::get("http://127.0.0.1:5801/foo")
+            .send(&service)
+            .await;
+        assert_eq!(
+            unrelated_short_path.status_code,
+            Some(StatusCode::NOT_FOUND)
+        );
     }
 }

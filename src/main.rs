@@ -5,7 +5,10 @@ use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
 use config::AtomicConfig;
-use gateway::{GatewayHandler, handler::unified_proxy};
+use gateway::{
+    GatewayHandler,
+    handler::{responses_alias_proxy, unified_proxy},
+};
 use salvo::{affix_state, prelude::*};
 use tracing::info;
 use tracing_subscriber::{
@@ -70,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
                 .inject(Arc::clone(gateway.stats()))
                 .inject(Arc::clone(gateway.client())),
         )
+        .push(Router::with_path("responses").goal(responses_alias_proxy))
         .push(Router::with_path("v1/{**rest}").goal(unified_proxy));
 
     // 启动服务器
