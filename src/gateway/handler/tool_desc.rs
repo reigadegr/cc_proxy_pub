@@ -1,4 +1,4 @@
-use serde_json::{Value, from_slice, to_vec};
+use serde_json::Value;
 
 /// 需要从 tools[].description 中过滤的关键词
 const TOOLS_DESCRIPTION_FILTER_KEYWORDS: &[&str] = &[
@@ -21,10 +21,10 @@ fn should_remove_tool_by_description(description: &str) -> bool {
 }
 
 /// 过滤 tools 数组中 description 命中关键词的元素
-pub fn prune_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = from_slice::<Value>(body_bytes).ok()?;
-
-    let tools = json.get_mut("tools")?.as_array_mut()?;
+pub fn prune_tools_by_description_in_json(json: &mut Value) -> bool {
+    let Some(tools) = json.get_mut("tools").and_then(Value::as_array_mut) else {
+        return false;
+    };
     let original_len = tools.len();
 
     tools.retain(|tool| {
@@ -33,7 +33,8 @@ pub fn prune_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
             .is_none_or(|description| !should_remove_tool_by_description(description))
     });
 
-    if tools.len() < original_len {
+    let changed = tools.len() < original_len;
+    if changed {
         tracing::info!(
             "🧹 已过滤 tools 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
             original_len,
@@ -42,5 +43,5 @@ pub fn prune_tools_by_description(body_bytes: &[u8]) -> Option<bytes::Bytes> {
         );
     }
 
-    to_vec(&json).ok().map(Into::into)
+    changed
 }

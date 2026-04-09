@@ -4,7 +4,9 @@ mod engine;
 mod response_builder;
 mod rules;
 
+#[cfg(test)]
 pub use engine::try_local_optimization;
+pub use engine::{try_local_optimization_from_json, try_local_url_optimization};
 pub use response_builder::OptimizationResponse;
 
 #[cfg(test)]

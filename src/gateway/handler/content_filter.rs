@@ -1,5 +1,4 @@
-use bytes::Bytes;
-use serde_json::{Value, from_slice, to_vec};
+use serde_json::Value;
 
 /// 需要从 messages[].content[].content 中移除的字符串
 ///
@@ -13,13 +12,14 @@ const CONTENT_STR_REMOVE: &[&str] = &[
 /// 检查每个元素的 content 字段，若包含指定字符串则将其消除。
 ///
 /// JSON 路径: `messages[].content[].content`
-pub fn sanitize_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
+pub fn sanitize_content_strings_in_json(json: &mut Value) -> bool {
     if CONTENT_STR_REMOVE.is_empty() {
-        return None;
+        return false;
     }
 
-    let mut json = from_slice::<Value>(body_bytes).ok()?;
-    let messages = json.get_mut("messages")?.as_array_mut()?;
+    let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
+        return false;
+    };
 
     let mut total_replacements = 0usize;
 
@@ -54,11 +54,12 @@ pub fn sanitize_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
             "🧹 已从 messages.content[].content 中移除 {} 处指定字符串",
             total_replacements
         );
+        return true;
     }
 
-    to_vec(&json).ok().map(Into::into)
+    false
 }
 
-pub fn filter_content_strings(body_bytes: &[u8]) -> Option<Bytes> {
-    sanitize_content_strings(body_bytes)
+pub fn filter_content_strings_in_json(json: &mut Value) -> bool {
+    sanitize_content_strings_in_json(json)
 }

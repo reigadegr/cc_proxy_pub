@@ -1,4 +1,4 @@
-use serde_json::{Value, from_slice, json, to_vec};
+use serde_json::{Value, json};
 
 /// 缺省的 `reasoning_content` 占位符
 const REASONING_PLACEHOLDER: &str = "[Previous reasoning not available in context]";
@@ -60,9 +60,7 @@ fn patch_message_reasoning_content(message: &mut Value, fallback_thinking: Optio
 /// - 优先从 message.content[type=thinking].thinking 提取文本
 /// - 给 `assistant` 消息补上/替换 `reasoning_content`（缺失或为占位符时）
 /// - 给 `messages` 最后一个元素补上/替换 `reasoning_content`（缺失或为占位符时），不区分 role
-pub fn patch_thinking_reasoning_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = from_slice::<Value>(body_bytes).ok()?;
-
+pub fn patch_thinking_reasoning_content_in_json(json: &mut Value) -> bool {
     // 检查是否启用了 thinking 模式
     let thinking_enabled = json
         .get("thinking")
@@ -71,10 +69,12 @@ pub fn patch_thinking_reasoning_content(body_bytes: &[u8]) -> Option<bytes::Byte
         == Some("enabled");
 
     if !thinking_enabled {
-        return None;
+        return false;
     }
 
-    let messages = json.get_mut("messages")?.as_array_mut()?;
+    let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
+        return false;
+    };
     let mut patched = false;
 
     // 用于兜底：取最后一个可用的 thinking 文本
@@ -98,12 +98,12 @@ pub fn patch_thinking_reasoning_content(body_bytes: &[u8]) -> Option<bytes::Byte
 
     if patched {
         tracing::debug!("Patched missing reasoning_content for thinking mode messages");
-        to_vec(&json).ok().map(Into::into)
+        true
     } else {
-        None
+        false
     }
 }
 
-pub fn patch_reasoning_for_thinking_mode(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    patch_thinking_reasoning_content(body_bytes)
+pub fn patch_reasoning_for_thinking_mode_in_json(json: &mut Value) -> bool {
+    patch_thinking_reasoning_content_in_json(json)
 }

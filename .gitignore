@@ -6,3 +6,4 @@
 **/*.json
 **/*.txt
 .claude
+.omx/

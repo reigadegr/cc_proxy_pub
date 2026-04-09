@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::atomic::Ordering};
 
-use rayon::prelude::*;
 use serde_json::Value;
 use tracing::{info, warn};
 
@@ -43,69 +42,69 @@ fn is_system_reminder(content: &str) -> bool {
 
 // 返回: (total, user_new, user_history, assistant, system)
 pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
+    if let Ok(json) = serde_json::from_str::<Value>(body) {
+        return analyze_request_json(&json);
+    }
+
+    // JSON 解析失败，可能是二进制或非标准格式
+    let user_new_tokens = estimate_tokens(body);
+    (user_new_tokens, user_new_tokens, 0, 0, 0)
+}
+
+pub fn analyze_request_json(json: &Value) -> (u64, u64, u64, u64, u64) {
     let mut system_tokens = 0;
     let mut user_new_tokens = 0;
     let mut user_history_tokens = 0;
     let mut assistant_tokens = 0;
 
-    if let Ok(json) = serde_json::from_str::<Value>(body) {
-        // 统计独立的 system 字段
-        if let Some(system) = json.get("system") {
-            system_tokens += estimate_tokens(&system.to_string());
-        }
+    if let Some(system) = json.get("system") {
+        system_tokens += estimate_tokens(&system.to_string());
+    }
 
-        // 统计 OpenAI 格式的 instructions 字段
-        if let Some(instructions) = json.get("instructions") {
-            system_tokens += estimate_tokens(&instructions.to_string());
-        }
+    if let Some(instructions) = json.get("instructions") {
+        system_tokens += estimate_tokens(&instructions.to_string());
+    }
 
-        // 统计 tools
-        if let Some(tools) = json.get("tools") {
-            system_tokens += estimate_tokens(&tools.to_string());
-        }
+    if let Some(tools) = json.get("tools") {
+        system_tokens += estimate_tokens(&tools.to_string());
+    }
 
-        // 统计 messages
-        if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
-            // 预处理所有消息，提取纯文本和角色
-            let parsed_messages: Vec<(Cow<'_, str>, Cow<'_, str>, u64)> = messages
-                .par_iter()
-                .filter_map(|msg| {
-                    let role = Cow::Borrowed(msg.get("role")?.as_str()?);
-                    let content = msg.get("content")?;
-                    let text = extract_text(content);
-                    let tokens = estimate_tokens(text.as_ref());
-                    Some((role, text, tokens))
-                })
-                .collect();
+    if let Some(messages) = json.get("messages").and_then(Value::as_array) {
+        let last_real_user_idx = messages.iter().enumerate().rev().find_map(|(idx, msg)| {
+            let role = msg.get("role").and_then(Value::as_str)?;
+            if role != "user" {
+                return None;
+            }
 
-            // 找到最后一条真正的 user 消息（排除 system-reminder）
-            let last_real_user_idx = parsed_messages
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, (role, text, _))| role == "user" && !is_system_reminder(text))
-                .map(|(idx, _)| idx);
+            let text = extract_text(msg.get("content")?);
+            (!is_system_reminder(text.as_ref())).then_some(idx)
+        });
 
-            for (idx, (role, text, tokens)) in parsed_messages.iter().enumerate() {
-                match role.as_ref() {
-                    "user" => {
-                        if is_system_reminder(text) {
-                            system_tokens += tokens;
-                        } else if Some(idx) == last_real_user_idx {
-                            user_new_tokens += tokens;
-                        } else {
-                            user_history_tokens += tokens;
-                        }
+        for (idx, msg) in messages.iter().enumerate() {
+            let Some(role) = msg.get("role").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(content) = msg.get("content") else {
+                continue;
+            };
+
+            let text = extract_text(content);
+            let tokens = estimate_tokens(text.as_ref());
+            match role {
+                "user" => {
+                    if is_system_reminder(text.as_ref()) {
+                        system_tokens += tokens;
+                    } else if Some(idx) == last_real_user_idx {
+                        user_new_tokens += tokens;
+                    } else {
+                        user_history_tokens += tokens;
                     }
-                    "assistant" => assistant_tokens += tokens,
-                    "system" => system_tokens += tokens,
-                    _ => {}
                 }
+                "assistant" => assistant_tokens += tokens,
+                "system" => system_tokens += tokens,
+                _ => {}
             }
         }
-    } else {
-        // JSON 解析失败，可能是二进制或非标准格式
-        user_new_tokens = estimate_tokens(body);
     }
 
     let total = system_tokens + user_new_tokens + user_history_tokens + assistant_tokens;
@@ -136,7 +135,22 @@ pub fn log_full_response(body: &str) {
 
 pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
     let (total, user_new, user_hist, assistant, system) = analyze_request_body(body_str);
+    update_token_stats(stats, total, user_new, user_hist, assistant, system);
+}
 
+pub fn calculate_tokens_from_json(stats: &RequestStats, request: &Value) {
+    let (total, user_new, user_hist, assistant, system) = analyze_request_json(request);
+    update_token_stats(stats, total, user_new, user_hist, assistant, system);
+}
+
+fn update_token_stats(
+    stats: &RequestStats,
+    total: u64,
+    user_new: u64,
+    user_hist: u64,
+    assistant: u64,
+    system: u64,
+) {
     stats.total_tokens.fetch_add(total, Ordering::Relaxed);
     stats.user_new_tokens.fetch_add(user_new, Ordering::Relaxed);
     stats

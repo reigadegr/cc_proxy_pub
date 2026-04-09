@@ -6,19 +6,39 @@ use super::{
 };
 use crate::config::OptimizationConfig;
 
+#[cfg(test)]
 pub fn try_local_optimization(
     body_bytes: &[u8],
     request_url: &str,
     flags: &OptimizationConfig,
 ) -> Option<OptimizationResponse> {
-    if let Some(rule_match) = detect_url_rule(request_url, flags) {
-        tracing::info!("Optimization: {}", rule_match.log_message());
-        return build_response(rule_match);
+    if let Some(response) = try_local_url_optimization(request_url, flags) {
+        return Some(response);
     }
 
     let request: Value = serde_json::from_slice(body_bytes).ok()?;
-    let rule_match = detect_request_rule(&request, flags)?;
+    try_local_optimization_from_json(&request, request_url, flags)
+}
 
+pub fn try_local_url_optimization(
+    request_url: &str,
+    flags: &OptimizationConfig,
+) -> Option<OptimizationResponse> {
+    let rule_match = detect_url_rule(request_url, flags)?;
+    tracing::info!("Optimization: {}", rule_match.log_message());
+    build_response(rule_match)
+}
+
+pub fn try_local_optimization_from_json(
+    request: &Value,
+    request_url: &str,
+    flags: &OptimizationConfig,
+) -> Option<OptimizationResponse> {
+    if let Some(response) = try_local_url_optimization(request_url, flags) {
+        return Some(response);
+    }
+
+    let rule_match = detect_request_rule(request, flags)?;
     tracing::info!("Optimization: {}", rule_match.log_message());
     build_response(rule_match)
 }

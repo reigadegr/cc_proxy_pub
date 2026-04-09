@@ -16,13 +16,14 @@ use crate::{
         handler::{
             request::{
                 filter_req_body, get_req_body, log_request_meta, make_proxy_url,
-                override_model_in_body, req_local_intercept,
+                override_model_in_body, parse_body_json, req_local_intercept_by_url,
+                req_local_intercept_from_json, serialize_body_json,
             },
             response::decompress_gzip_if_needed,
-            system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt},
-            thinking_patch::patch_reasoning_for_thinking_mode,
+            system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt_in_json},
+            thinking_patch::patch_reasoning_for_thinking_mode_in_json,
         },
-        service::{calculate_tokens, log_full_body, log_full_response},
+        service::{calculate_tokens, calculate_tokens_from_json, log_full_body, log_full_response},
     },
 };
 
@@ -137,18 +138,11 @@ async fn run_proxy(
     };
 
     let cfg = config.get();
+    let request_url = req.uri().to_string();
 
-    if matches!(plan.kind, ProxyKind::Claude) && req_local_intercept(req, res, &body_bytes, &cfg) {
-        return;
-    }
+    log_request_meta(req.method().as_str(), &request_url, req.headers());
 
-    log_request_meta(
-        req.method().as_str(),
-        req.uri().to_string().as_str(),
-        req.headers(),
-    );
-
-    let body_bytes = prepare_request_body(plan, body_bytes, &cfg, stats, res).await;
+    let body_bytes = prepare_request_body(plan, body_bytes, &request_url, &cfg, stats, res);
     let Some(body_bytes) = body_bytes else {
         return;
     };
@@ -284,14 +278,20 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
     last_failure.map_or_else(|| RetryLoopResult::NoSelection, RetryLoopResult::Failed)
 }
 
-async fn prepare_request_body(
+fn prepare_request_body(
     plan: ProxyPlan,
     body_bytes: Bytes,
+    request_url: &str,
     cfg: &Config,
     stats: Option<&Arc<RequestStats>>,
     res: &mut Response,
 ) -> Option<Bytes> {
     let mut current = body_bytes;
+    let mut token_stats_recorded = false;
+
+    if matches!(plan.kind, ProxyKind::Claude) && req_local_intercept_by_url(res, request_url, cfg) {
+        return None;
+    }
 
     if matches!(plan.kind, ProxyKind::Claude)
         && !current.is_empty()
@@ -302,18 +302,32 @@ async fn prepare_request_body(
     }
 
     if matches!(plan.kind, ProxyKind::Claude) && !current.is_empty() {
-        current = insert_custom_system_prompt(&current, CUSTOM_SYSTEM_PROMPT).unwrap_or(current);
-        current = match filter_req_body(&current).await {
-            Ok(body) => body,
-            Err(error) => {
-                tracing::error!("{error}");
-                res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        if let Ok(mut request_json) = parse_body_json(&current) {
+            if req_local_intercept_from_json(res, &request_json, request_url, cfg) {
                 return None;
             }
-        };
-        if let Some(patched) = patch_reasoning_for_thinking_mode(&current) {
-            tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
-            current = patched;
+
+            insert_custom_system_prompt_in_json(&mut request_json, CUSTOM_SYSTEM_PROMPT);
+            filter_req_body(&mut request_json);
+            if patch_reasoning_for_thinking_mode_in_json(&mut request_json) {
+                tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
+            }
+
+            if let Some(stats) = stats {
+                calculate_tokens_from_json(stats.as_ref(), &request_json);
+                token_stats_recorded = true;
+            }
+
+            current = match serialize_body_json(&request_json) {
+                Ok(body) => body,
+                Err(error) => {
+                    tracing::error!("Failed to serialize Claude request body: {}", error);
+                    res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+                    return None;
+                }
+            };
+        } else {
+            tracing::debug!("Skipping Claude body refinement because request JSON parsing failed");
         }
     }
 
@@ -325,6 +339,7 @@ async fn prepare_request_body(
         }
 
         if matches!(plan.kind, ProxyKind::Claude)
+            && !token_stats_recorded
             && let Some(stats) = stats
         {
             calculate_tokens(stats.as_ref(), body_str);
@@ -482,7 +497,7 @@ async fn forward_proxy_response(
                 match frame {
                     Ok(frame) => frame.into_data().ok(),
                     Err(error) => {
-                        tracing::error!("{}: {}", sse_error_label(kind), error);
+                        tracing::info!("{}: {}", sse_error_label(kind), error);
                         None
                     }
                 }
@@ -736,7 +751,11 @@ mod tests {
     use salvo::Request;
     use salvo::http::StatusCode;
 
-    use super::{build_proxy_request, should_retry_upstream_status};
+    use super::{
+        ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body,
+        should_retry_upstream_status,
+    };
+    use crate::config::{Config, Mode, OptimizationConfig};
 
     fn make_request(user_agent: &str) -> Request {
         let req_result = HyperRequest::builder()
@@ -782,6 +801,26 @@ mod tests {
         header_name: &str,
     ) -> Option<&'a str> {
         request.headers().get(header_name)?.to_str().ok()
+    }
+
+    fn test_config() -> Config {
+        Config {
+            port: 9066,
+            log_req_body: false,
+            log_res_body: false,
+            user_agent_global_claude: None,
+            user_agent_global_codex: None,
+            upstream: Vec::new(),
+            optimizations: OptimizationConfig::default(),
+        }
+    }
+
+    fn claude_plan() -> ProxyPlan {
+        ProxyPlan {
+            kind: ProxyKind::Claude,
+            upstream_mode: Mode::AnthropicDirect,
+            missing_upstream_message: "unused in tests",
+        }
     }
 
     #[test]
@@ -844,6 +883,52 @@ mod tests {
         assert_eq!(
             header_value_as_str(&proxy_req, http::header::USER_AGENT),
             Some("Original-UA/1.0")
+        );
+    }
+
+    #[test]
+    fn prepare_request_body_intercepts_count_tokens_url_with_invalid_json_body() {
+        let mut res = salvo::Response::new();
+
+        let body = prepare_request_body(
+            claude_plan(),
+            Bytes::from_static(b"not json"),
+            "/v1/messages/count_tokens?foo=bar",
+            &test_config(),
+            None,
+            &mut res,
+        );
+
+        assert!(body.is_none());
+        assert_eq!(res.status_code, Some(StatusCode::OK));
+        assert_eq!(
+            res.headers()
+                .get("x-cc-proxy-optimization")
+                .and_then(|value| value.to_str().ok()),
+            Some("max_tokens_mock")
+        );
+    }
+
+    #[test]
+    fn prepare_request_body_intercepts_count_tokens_url_with_empty_body() {
+        let mut res = salvo::Response::new();
+
+        let body = prepare_request_body(
+            claude_plan(),
+            Bytes::new(),
+            "/v1/messages/count_tokens?foo=bar",
+            &test_config(),
+            None,
+            &mut res,
+        );
+
+        assert!(body.is_none());
+        assert_eq!(res.status_code, Some(StatusCode::OK));
+        assert_eq!(
+            res.headers()
+                .get("x-cc-proxy-optimization")
+                .and_then(|value| value.to_str().ok()),
+            Some("max_tokens_mock")
         );
     }
 }

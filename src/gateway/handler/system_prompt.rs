@@ -1,4 +1,4 @@
-use serde_json::{Value, from_slice, to_vec};
+use serde_json::Value;
 
 pub const CUSTOM_SYSTEM_PROMPT: &str = "You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
@@ -91,9 +91,10 @@ const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
 ///
 /// Claude CLI 发送的请求中，system 数组包含很长的提示词文本，
 /// 这些文本会占用大量 tokens。此函数移除包含任意标记文本的元素。
-pub fn remove_builtin_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = parse_request_json(body_bytes)?;
-    let system = get_system_array_mut(&mut json)?;
+pub fn remove_builtin_system_prompts_in_json(json: &mut Value) -> bool {
+    let Some(system) = get_system_array_mut(json) else {
+        return false;
+    };
 
     let original_len = system.len();
 
@@ -109,8 +110,9 @@ pub fn remove_builtin_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> 
     });
 
     // 如果有元素被移除，记录日志
-    if system.len() < original_len {
-        tracing::info!(
+    let changed = system.len() < original_len;
+    if changed {
+        tracing::debug!(
             "🧹 已过滤 system 数组: {} 个元素 → {} 个元素 (移除了 {} 个)",
             original_len,
             system.len(),
@@ -118,11 +120,11 @@ pub fn remove_builtin_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> 
         );
     }
 
-    write_request_json(&json)
+    changed
 }
 
-pub fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    remove_builtin_system_prompts(body_bytes)
+pub fn filter_system_prompts_in_json(json: &mut Value) -> bool {
+    remove_builtin_system_prompts_in_json(json)
 }
 
 /// 插入自定义系统提示词到 system 数组
@@ -132,15 +134,10 @@ pub fn filter_system_prompts(body_bytes: &[u8]) -> Option<bytes::Bytes> {
 ///
 /// 此函数还会从原始 system 数组中提取 <env>...</env> 标签内的环境信息，
 /// 并追加到自定义提示词的末尾。
-pub fn prepend_custom_system_prompt(
-    body_bytes: &[u8],
-    custom_prompt: &str,
-) -> Option<bytes::Bytes> {
-    let mut json = parse_request_json(body_bytes)?;
-
+pub fn prepend_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &str) -> bool {
     // 从原始 system 数组中提取环境信息
     let (env_info, has_env) =
-        extract_env_info(&json).map_or((None, false), |info| (Some(info), true));
+        extract_env_info(json).map_or((None, false), |info| (Some(info), true));
 
     // 如果有环境信息，追加到自定义提示词末尾
     let final_prompt = env_info.map_or_else(
@@ -151,28 +148,22 @@ pub fn prepend_custom_system_prompt(
     // 创建自定义提示词的元素
     let prompt_obj = build_custom_system_prompt_object(&final_prompt);
 
-    let system = ensure_system_array(&mut json)?;
+    let Some(system) = ensure_system_array(json) else {
+        return false;
+    };
     system.insert(0, prompt_obj);
 
-    tracing::info!(
+    tracing::debug!(
         "✅ 已插入自定义系统提示词，当前 system 数组长度: {}{}",
         system.len(),
         if has_env { " (包含环境信息)" } else { "" }
     );
 
-    write_request_json(&json)
+    true
 }
 
-pub fn insert_custom_system_prompt(body_bytes: &[u8], custom_prompt: &str) -> Option<bytes::Bytes> {
-    prepend_custom_system_prompt(body_bytes, custom_prompt)
-}
-
-fn parse_request_json(body_bytes: &[u8]) -> Option<Value> {
-    from_slice::<Value>(body_bytes).ok()
-}
-
-fn write_request_json(json: &Value) -> Option<bytes::Bytes> {
-    to_vec(json).ok().map(Into::into)
+pub fn insert_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &str) -> bool {
+    prepend_custom_system_prompt_in_json(json, custom_prompt)
 }
 
 fn get_system_array_mut(json: &mut Value) -> Option<&mut Vec<Value>> {

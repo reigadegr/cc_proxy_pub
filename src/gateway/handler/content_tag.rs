@@ -1,4 +1,4 @@
-use serde_json::{Value, from_slice, to_vec};
+use serde_json::Value;
 
 /// 需要从 messages[].content[] 中移除的标签（成对匹配）
 const CONTENT_TAG_FILTERS: &[(&str, &str)] = &[
@@ -33,10 +33,10 @@ fn should_remove_content(text: &str) -> bool {
 /// - <local-command-caveat>...</local-command-caveat>
 ///
 /// 这些内容占用大量 tokens 但对模型无用，此函数将其移除。
-pub fn strip_messages_content_tags(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = from_slice::<Value>(body_bytes).ok()?;
-
-    let messages = json.get_mut("messages")?.as_array_mut()?;
+pub fn strip_messages_content_tags_in_json(json: &mut Value) -> bool {
+    let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
+        return false;
+    };
 
     let mut total_removed = 0usize;
     let mut total_chars = 0usize;
@@ -82,23 +82,24 @@ pub fn strip_messages_content_tags(body_bytes: &[u8]) -> Option<bytes::Bytes> {
             total_chars,
             total_chars / 4
         );
+        return true;
     }
 
-    to_vec(&json).ok().map(Into::into)
+    false
 }
 
-pub fn filter_messages_content(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    strip_messages_content_tags(body_bytes)
+pub fn filter_messages_content_in_json(json: &mut Value) -> bool {
+    strip_messages_content_tags_in_json(json)
 }
 
 /// 覆盖特定错误的 `is_error` 字段
 ///
 /// 当 role 为 "user" 的消息中，content 数组包含特定权限错误时，
 /// 强制将 `is_error` 改为 false，避免触发不必要的错误处理。
-pub fn clear_permission_denied_is_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    let mut json = from_slice::<Value>(body_bytes).ok()?;
-
-    let messages = json.get_mut("messages")?.as_array_mut()?;
+pub fn clear_permission_denied_is_error_in_json(json: &mut Value) -> bool {
+    let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
+        return false;
+    };
 
     let mut overridden_count = 0usize;
 
@@ -139,11 +140,12 @@ pub fn clear_permission_denied_is_error(body_bytes: &[u8]) -> Option<bytes::Byte
             "🔧 已覆盖 {} 个 permission denied 错误的 is_error 为 false",
             overridden_count
         );
+        return true;
     }
 
-    to_vec(&json).ok().map(Into::into)
+    false
 }
 
-pub fn override_permission_error(body_bytes: &[u8]) -> Option<bytes::Bytes> {
-    clear_permission_denied_is_error(body_bytes)
+pub fn override_permission_error_in_json(json: &mut Value) -> bool {
+    clear_permission_denied_is_error_in_json(json)
 }
