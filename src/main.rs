@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
                 .inject(Arc::clone(gateway.stats()))
                 .inject(Arc::clone(gateway.client())),
         )
-        .push(Router::with_path("{**rest}").goal(unified_proxy));
+        .push(Router::with_path("v1/{**rest}").goal(unified_proxy));
 
     // 启动服务器
     let acceptor = TcpListener::new(listen_addr.clone()).bind().await;
