@@ -93,7 +93,7 @@ CliReqRefiner 的核心功能——在转发到上游之前精炼请求体：
 
 ```bash
 # 方式一：环境变量
-export ANTHROPIC_BASE_URL="http://127.0.0.1:9066"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:9077"
 ```
 
 或在 `~/.claude/settings.json` 中：
@@ -101,7 +101,7 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066"
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9066",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9077",
     "ANTHROPIC_AUTH_TOKEN": "随便填"
   }
 }
@@ -114,7 +114,7 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066"
 - 其他根路径会直接返回 `404`，不转发到上游
 
 其中：
-- `ANTHROPIC_BASE_URL` 指向服务根地址 `http://127.0.0.1:9066`，不要再追加 `/claude` 或 `/codex` 前缀
+- `ANTHROPIC_BASE_URL` 指向服务根地址 `http://127.0.0.1:9077`，不要再追加 `/claude` 或 `/codex` 前缀
 - `ANTHROPIC_AUTH_TOKEN` 可以随意填写——CliReqRefiner 转发时会覆盖它
 - 如果你修改了 `config.toml` 里的 `port`，这里也要同步改成对应端口
 
@@ -133,9 +133,9 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9066"
 示例：
 
 ```text
-Claude Code              -> http://127.0.0.1:9066/v1/messages
-Codex / Responses client -> http://127.0.0.1:9066/v1/responses
-OpenAI Chat client       -> http://127.0.0.1:9066/v1/chat/completions
+Claude Code              -> http://127.0.0.1:9077/v1/messages
+Codex / Responses client -> http://127.0.0.1:9077/v1/responses
+OpenAI Chat client       -> http://127.0.0.1:9077/v1/chat/completions
 ```
 
 > 注意：代理只做**严格路径分流**与请求体精炼，不会在 Anthropic / OpenAI 协议之间做自动转换或回退。
@@ -160,8 +160,8 @@ sh build_native_stable.sh r
 # 策略：上游之间轮询，API Key 之间轮询
 # 修改后即时生效
 
-# 服务监听端口（默认 9066，修改后需重启服务）
-port = 9066
+# 服务监听端口（默认 9077，修改后需重启服务）
+port = 9077
 
 # 是否打印请求体
 log_req_body = false
@@ -214,7 +214,7 @@ cargo run -p cli_req_refiner
 cargo run -p cli_req_refiner -- /path/to/config.toml
 ```
 
-服务默认监听 `0.0.0.0:9066`，可通过 `config.toml` 顶层 `port` 修改。
+服务默认监听 `0.0.0.0:9077`，可通过 `config.toml` 顶层 `port` 修改。
 
 ---
 
@@ -242,7 +242,7 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 
 | 字段 | 类型 | 默认值 | 说明 |
 |:-----|:-----|:-------|:-----|
-| `port` | `u16` | `9066` | 服务监听端口，修改后需重启进程生效 |
+| `port` | `u16` | `9077` | 服务监听端口，修改后需重启进程生效 |
 
 ### ⚙️ 优化配置
 

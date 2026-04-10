@@ -1,221 +1,5 @@
-use std::fmt;
-
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, IntoDeserializer, Visitor},
-};
-
-/// 工作模式枚举
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum Mode {
-    /// Anthropic 接口，供 `claude_proxy` 直通转发
-    #[serde(rename = "anthropic")]
-    #[default]
-    AnthropicDirect,
-    /// `OpenAI` Responses 接口，供 `codex_proxy` 直通转发
-    #[serde(rename = "openai_responses")]
-    OpenAIResponses,
-    /// `OpenAI` Chat Completions 接口（预留）
-    #[serde(rename = "openai_chat")]
-    OpenAIChat,
-}
-
-impl Mode {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AnthropicDirect => "anthropic",
-            Self::OpenAIResponses => "openai_responses",
-            Self::OpenAIChat => "openai_chat",
-        }
-    }
-}
-
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamModes(Vec<Mode>);
-
-impl UpstreamModes {
-    #[must_use]
-    pub fn supports(&self, mode: Mode) -> bool {
-        self.0.contains(&mode)
-    }
-
-    fn normalize(modes: Vec<Mode>) -> Self {
-        let mut normalized = Vec::with_capacity(modes.len());
-        for mode in modes {
-            if !normalized.contains(&mode) {
-                normalized.push(mode);
-            }
-        }
-
-        if normalized.is_empty() {
-            return Self::default();
-        }
-
-        Self(normalized)
-    }
-}
-
-impl Default for UpstreamModes {
-    fn default() -> Self {
-        Self(vec![Mode::AnthropicDirect])
-    }
-}
-
-impl From<Vec<Mode>> for UpstreamModes {
-    fn from(modes: Vec<Mode>) -> Self {
-        Self::normalize(modes)
-    }
-}
-
-impl Serialize for UpstreamModes {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if self.0.len() == 1 {
-            return self.0[0].serialize(serializer);
-        }
-
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for UpstreamModes {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct UpstreamModesVisitor;
-
-        impl<'de> Visitor<'de> for UpstreamModesVisitor {
-            type Value = UpstreamModes;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a mode string or a non-empty mode array")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let mode = Mode::deserialize(value.into_deserializer())?;
-                Ok(UpstreamModes::normalize(vec![mode]))
-            }
-
-            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let modes =
-                    Vec::<Mode>::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
-                if modes.is_empty() {
-                    return Err(de::Error::custom("mode array must not be empty"));
-                }
-
-                Ok(UpstreamModes::normalize(modes))
-            }
-        }
-
-        deserializer.deserialize_any(UpstreamModesVisitor)
-    }
-}
-
-impl fmt::Display for UpstreamModes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.len() == 1 {
-            return write!(f, "{}", self.0[0]);
-        }
-
-        let joined = self
-            .0
-            .iter()
-            .map(|mode| mode.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        write!(f, "[{joined}]")
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GlobalUserAgentConfig {
-    pub claude: Option<String>,
-    pub codex: Option<String>,
-}
-
-impl GlobalUserAgentConfig {
-    #[must_use]
-    pub fn resolve_for_mode(&self, mode: Mode) -> Option<&str> {
-        match mode {
-            Mode::AnthropicDirect => self.claude.as_deref(),
-            Mode::OpenAIResponses | Mode::OpenAIChat => self.codex.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn is_any_configured(&self) -> bool {
-        [self.claude.as_deref(), self.codex.as_deref()]
-            .into_iter()
-            .flatten()
-            .any(|value| !value.trim().is_empty())
-    }
-}
-
-/// 上游提供商配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UpstreamConfig {
-    /// 是否启用该上游；关闭后会在选择阶段被跳过
-    #[serde(default = "default_true")]
-    pub enable: bool,
-    /// 上游名称，仅用于日志与排障
-    #[serde(default)]
-    pub name: String,
-    /// 上游主机地址+路径
-    #[serde(alias = "endpoint")]
-    pub base_url: String,
-    /// 模型名称（覆盖请求体中的 model 字段）
-    #[serde(default = "default_model")]
-    pub model: String,
-    /// API 密钥列表（支持多个 key 进行负载均衡）
-    #[serde(default)]
-    pub api_keys: Vec<String>,
-    /// 仅用于 Claude 接口（Anthropic 模式）的 User-Agent；优先级高于全局同类配置
-    #[serde(default, alias = "ua_claude")]
-    pub user_agent_claude: Option<String>,
-    /// 仅用于 Codex 接口（OpenAI Responses / Chat 模式）的 User-Agent；优先级高于全局同类配置
-    #[serde(default, alias = "ua_codex")]
-    pub user_agent_codex: Option<String>,
-    /// 上游协议类型，支持单值或数组
-    #[serde(default)]
-    pub mode: UpstreamModes,
-}
-
-impl UpstreamConfig {
-    #[must_use]
-    pub fn user_agent_for_mode(&self, mode: Mode) -> Option<&str> {
-        match mode {
-            Mode::AnthropicDirect => self.user_agent_claude.as_deref(),
-            Mode::OpenAIResponses | Mode::OpenAIChat => self.user_agent_codex.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn is_any_user_agent_configured(&self) -> bool {
-        [
-            self.user_agent_claude.as_deref(),
-            self.user_agent_codex.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|value| !value.trim().is_empty())
-    }
-}
+use my_selector::{GlobalUserAgentConfig, UpstreamConfig};
+use serde::{Deserialize, Serialize};
 
 /// 配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,21 +57,6 @@ impl Default for OptimizationConfig {
     }
 }
 
-impl Default for UpstreamConfig {
-    fn default() -> Self {
-        Self {
-            enable: default_true(),
-            name: String::new(),
-            base_url: String::new(),
-            model: default_model(),
-            api_keys: Vec::new(),
-            user_agent_claude: None,
-            user_agent_codex: None,
-            mode: UpstreamModes::default(),
-        }
-    }
-}
-
 impl Config {
     #[must_use]
     pub fn global_user_agent_config(&self) -> GlobalUserAgentConfig {
@@ -305,23 +74,15 @@ pub const fn default_true() -> bool {
 
 #[must_use]
 pub const fn default_port() -> u16 {
-    9066
-}
-
-#[must_use]
-pub const fn default_model() -> String {
-    String::new()
-}
-
-#[must_use]
-pub fn enabled_upstream_count(upstreams: &[UpstreamConfig]) -> usize {
-    upstreams.iter().filter(|upstream| upstream.enable).count()
+    9077
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Config, Mode, UpstreamModes, default_port};
+    use my_selector::{GlobalUserAgentConfig, Mode, UpstreamModes};
+
+    use super::{Config, default_port};
 
     #[test]
     fn upstream_enable_defaults_to_true() {
@@ -373,7 +134,7 @@ mod tests {
 
         assert_eq!(
             config.upstream[0].mode,
-            UpstreamModes::normalize(vec![Mode::AnthropicDirect, Mode::OpenAIResponses])
+            vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into()
         );
     }
 
@@ -506,7 +267,7 @@ mod tests {
 
     #[test]
     fn global_user_agent_config_reuses_codex_for_openai_chat() {
-        let global = super::GlobalUserAgentConfig {
+        let global = GlobalUserAgentConfig {
             claude: Some("Claude-Global/1.0".to_string()),
             codex: Some("Codex-Global/1.0".to_string()),
         };
@@ -546,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn port_defaults_to_9066() {
+    fn port_defaults_to_9077() {
         let config: Config = toml::from_str(
             r#"
                 [[upstream]]
@@ -591,7 +352,7 @@ mod tests {
     fn port_can_be_overridden() {
         let config: Config = toml::from_str(
             r#"
-                port = 19066
+                port = 19077
 
                 [[upstream]]
                 base_url = "https://example.com"
@@ -601,6 +362,6 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(config.port, 19066);
+        assert_eq!(config.port, 19077);
     }
 }

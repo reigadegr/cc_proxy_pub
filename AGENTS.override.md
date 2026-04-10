@@ -69,12 +69,15 @@ git config user.email
 ## 架构概览
 
 ### 入口
-- **`app/src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9066`）启动 Salvo 服务器
+- **`app/src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9077`）启动 Salvo 服务器
 
-### 配置系统 (`app/src/config/`)
-- **`mod.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载；`UpstreamConfig` 定义上游提供商；`OptimizationConfig` 控制拦截行为
-- **`selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys
-- **`format.rs`** - TOML 格式化工具
+### 配置系统
+- **`crates/config/src/lib.rs`** - 对外导出 `AtomicConfig`、`Config`、`OptimizationConfig` 以及 selector 相关类型
+- **`crates/config/src/runtime.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载
+- **`crates/config/src/model.rs`** - `Config` 与 `OptimizationConfig` 定义
+- **`crates/selector/src/model.rs`** - `UpstreamConfig`、`Mode`、`UpstreamModes` 与全局 UA 配置定义
+- **`crates/selector/src/selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys
+- **`crates/config/src/format.rs`** - TOML 格式化工具
 
 ### 网关层 (`app/src/gateway/`)
 - **`mod.rs`** - `GatewayHandler` 持有共享的 `HttpClient`（hyper + HTTPS）和 `RequestStats`
@@ -102,7 +105,7 @@ git config user.email
 代理读取 `config.toml`（或第一个命令行参数指定的路径）。示例：
 
 ```toml
-port = 9066
+port = 9077
 log_req_body = false
 log_res_body = false
 

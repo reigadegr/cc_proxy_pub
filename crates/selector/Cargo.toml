@@ -1,0 +1,10 @@
+[package]
+name = "my_selector"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }

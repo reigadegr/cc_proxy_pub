@@ -17,7 +17,7 @@ mod tests {
 
     #[test]
     fn normalizes_basic_spacing() {
-        let input = r#"port=19066
+        let input = r#"port=19077
 log_req_body=false
 log_res_body =false
 user_agent_global_claude="Claude-Global-UA/2.0"
@@ -34,7 +34,7 @@ user_agent_codex="Codex-UA/3.0"
 
         let output = format_toml(input);
 
-        assert!(output.contains("port = 19066"));
+        assert!(output.contains("port = 19077"));
         assert!(output.contains("log_req_body = false"));
         assert!(output.contains("log_res_body = false"));
         assert!(output.contains("user_agent_global_claude = \"Claude-Global-UA/2.0\""));

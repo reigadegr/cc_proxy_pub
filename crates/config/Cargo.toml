@@ -7,6 +7,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+my_selector = { path = "../selector" }
 arc-swap = "1.9.1"
 notify = "8.2.0"
 serde = { version = "1.0.228", features = ["derive"] }

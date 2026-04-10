@@ -849,7 +849,7 @@ mod tests {
 
     fn test_config() -> Config {
         Config {
-            port: 9066,
+            port: 9077,
             log_req_body: false,
             log_res_body: false,
             user_agent_global_claude: None,
