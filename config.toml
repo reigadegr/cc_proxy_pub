@@ -18,6 +18,7 @@ user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)"
 # Upstream 1: 智谱 AI Anthropic 兼容接口
 [[upstream]]
 enable = true
+name = "zhipu-main"
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]

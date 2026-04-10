@@ -173,6 +173,7 @@ user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)" # 对 openai_respon
 # 上游 1
 [[upstream]]
 enable = true
+name = "zhipu-main"
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
@@ -185,6 +186,7 @@ user_agent_codex = "Codex/0.31.0 (Linux; Android 14)" # 对 openai_responses / o
 # 上游 2：添加更多上游实现负载均衡
 # [[upstream]]
 # enable = true
+# name = "backup-upstream"
 # base_url = "https://another-provider.com/api/anthropic"
 # model = "claude-3-5-sonnet-20241022"
 # api_keys = ["your_key"]
@@ -222,6 +224,7 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 
 | 字段 | 类型 | 说明 |
 |:-----|:-----|:-----|
+| `name` | `String` | 上游名称，可选，主要用于日志与排障 |
 | `base_url` | `String` | 上游 API 地址 |
 | `model` | `String` | 强制使用的模型名称 |
 | `api_keys` | `Vec<String>` | API Key 列表 — 支持多 Key 负载均衡 |

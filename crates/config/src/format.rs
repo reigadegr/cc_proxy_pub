@@ -24,6 +24,7 @@ user_agent_global_claude="Claude-Global-UA/2.0"
 user_agent_global_codex="Codex-Global-UA/3.0"
 [[upstream]]
 enable=true
+name="primary"
 base_url= "https://example.com"
 model="m"
 api_keys=["k1","k2"]
@@ -39,6 +40,7 @@ user_agent_codex="Codex-UA/3.0"
         assert!(output.contains("user_agent_global_claude = \"Claude-Global-UA/2.0\""));
         assert!(output.contains("user_agent_global_codex = \"Codex-Global-UA/3.0\""));
         assert!(output.contains("enable = true"));
+        assert!(output.contains("name = \"primary\""));
         assert!(output.contains("base_url = \"https://example.com\""));
         assert!(output.contains("model = \"m\""));
         assert!(output.contains("api_keys = [\"k1\", \"k2\"]"));

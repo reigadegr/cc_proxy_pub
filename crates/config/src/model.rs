@@ -173,6 +173,9 @@ pub struct UpstreamConfig {
     /// 是否启用该上游；关闭后会在选择阶段被跳过
     #[serde(default = "default_true")]
     pub enable: bool,
+    /// 上游名称，仅用于日志与排障
+    #[serde(default)]
+    pub name: String,
     /// 上游主机地址+路径
     #[serde(alias = "endpoint")]
     pub base_url: String,
@@ -274,6 +277,7 @@ impl Default for UpstreamConfig {
     fn default() -> Self {
         Self {
             enable: default_true(),
+            name: String::new(),
             base_url: String::new(),
             model: default_model(),
             api_keys: Vec::new(),
@@ -334,7 +338,24 @@ mod tests {
 
         assert_eq!(config.upstream.len(), 1);
         assert!(config.upstream[0].enable);
+        assert!(config.upstream[0].name.is_empty());
         assert_eq!(config.upstream[0].mode, UpstreamModes::default());
+    }
+
+    #[test]
+    fn upstream_name_deserializes_when_present() {
+        let config: Config = toml::from_str(
+            r#"
+                [[upstream]]
+                name = "primary-anthropic"
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.upstream[0].name, "primary-anthropic");
     }
 
     #[test]

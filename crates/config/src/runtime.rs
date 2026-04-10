@@ -166,8 +166,13 @@ fn log_upstream_change(old_upstream: &[UpstreamConfig], new_upstream: &[Upstream
     );
     for (index, upstream) in new_upstream.iter().enumerate() {
         info!(
-            "  [{}] enable={}, base_url={}, model={}, modes={}, api_keys={} 个, user_agent_configured={}",
+            "  [{}] name={}, enable={}, base_url={}, model={}, modes={}, api_keys={} 个, user_agent_configured={}",
             index,
+            if upstream.name.is_empty() {
+                "-"
+            } else {
+                upstream.name.as_str()
+            },
             upstream.enable,
             upstream.base_url,
             upstream.model,

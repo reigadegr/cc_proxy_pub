@@ -70,8 +70,13 @@ pub fn log_loaded_config(config: &Config) {
     );
     for (index, upstream) in config.upstream.iter().enumerate() {
         info!(
-            "  [{}] enable={}, base_url={}, model={}, modes={}, api_keys={} 个",
+            "  [{}] name={}, enable={}, base_url={}, model={}, modes={}, api_keys={} 个",
             index,
+            if upstream.name.is_empty() {
+                "-"
+            } else {
+                upstream.name.as_str()
+            },
             upstream.enable,
             upstream.base_url,
             upstream.model,
