@@ -21,6 +21,7 @@ pub enum Mode {
 }
 
 impl Mode {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AnthropicDirect => "anthropic",
@@ -40,6 +41,7 @@ impl fmt::Display for Mode {
 pub struct UpstreamModes(Vec<Mode>);
 
 impl UpstreamModes {
+    #[must_use]
     pub fn supports(&self, mode: Mode) -> bool {
         self.0.contains(&mode)
     }
@@ -148,6 +150,7 @@ pub struct GlobalUserAgentConfig {
 }
 
 impl GlobalUserAgentConfig {
+    #[must_use]
     pub fn resolve_for_mode(&self, mode: Mode) -> Option<&str> {
         match mode {
             Mode::AnthropicDirect => self.claude.as_deref(),
@@ -155,6 +158,7 @@ impl GlobalUserAgentConfig {
         }
     }
 
+    #[must_use]
     pub fn is_any_configured(&self) -> bool {
         [self.claude.as_deref(), self.codex.as_deref()]
             .into_iter()
@@ -190,6 +194,7 @@ pub struct UpstreamConfig {
 }
 
 impl UpstreamConfig {
+    #[must_use]
     pub fn user_agent_for_mode(&self, mode: Mode) -> Option<&str> {
         match mode {
             Mode::AnthropicDirect => self.user_agent_claude.as_deref(),
@@ -197,6 +202,7 @@ impl UpstreamConfig {
         }
     }
 
+    #[must_use]
     pub fn is_any_user_agent_configured(&self) -> bool {
         [
             self.user_agent_claude.as_deref(),
@@ -279,6 +285,7 @@ impl Default for UpstreamConfig {
 }
 
 impl Config {
+    #[must_use]
     pub fn global_user_agent_config(&self) -> GlobalUserAgentConfig {
         GlobalUserAgentConfig {
             claude: self.user_agent_global_claude.clone(),
@@ -287,18 +294,22 @@ impl Config {
     }
 }
 
+#[must_use]
 pub const fn default_true() -> bool {
     true
 }
 
+#[must_use]
 pub const fn default_port() -> u16 {
     9066
 }
 
+#[must_use]
 pub const fn default_model() -> String {
     String::new()
 }
 
+#[must_use]
 pub fn enabled_upstream_count(upstreams: &[UpstreamConfig]) -> usize {
     upstreams.iter().filter(|upstream| upstream.enable).count()
 }

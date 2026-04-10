@@ -28,6 +28,7 @@ pub struct UpstreamSelector {
 impl UpstreamSelector {
     /// 创建新的 Upstream 选择器
     #[cfg(test)]
+    #[must_use]
     pub fn new(global_user_agent: Option<String>, upstreams: Vec<UpstreamConfig>) -> Option<Self> {
         Self::new_with_global_user_agents(
             GlobalUserAgentConfig {
@@ -38,6 +39,7 @@ impl UpstreamSelector {
         )
     }
 
+    #[must_use]
     pub fn new_with_global_user_agents(
         global_user_agents: GlobalUserAgentConfig,
         upstreams: Vec<UpstreamConfig>,

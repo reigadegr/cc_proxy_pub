@@ -4,10 +4,8 @@ use arc_swap::{ArcSwap, Guard};
 use tracing::{error, info};
 
 use super::{
-    Config, UpstreamConfig,
+    Config, UpstreamConfig, UpstreamSelector, enabled_upstream_count,
     loader::{load_from_file, load_initial_config, resolve_config_path},
-    model::enabled_upstream_count,
-    selector::UpstreamSelector,
     watcher::start_config_watcher,
 };
 

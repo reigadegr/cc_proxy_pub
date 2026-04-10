@@ -6,7 +6,7 @@ use std::{
 
 use tracing::{info, warn};
 
-use super::{Config, format::format_toml, model::enabled_upstream_count};
+use super::{Config, enabled_upstream_count, format::format_toml};
 
 pub fn resolve_config_path() -> PathBuf {
     env::args()

@@ -7,6 +7,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+cli_req_refiner_config = { path = "../crates/config" }
 anyhow = "1.0.102"
 futures-util = { version = "0.3.32", default-features = false, features = [
   "std",
@@ -36,7 +37,6 @@ salvo = { version = "0.91.1", default-features = false, features = [
   "affix-state",
   "test",
 ] }
-serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 taplo = "0.14.0"
 tokio = { version = "1.51.1", features = ["full"] }

@@ -1,0 +1,13 @@
+[package]
+name = "cli_req_refiner_config"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+
+[dev-dependencies]
+toml = "1.1.2"

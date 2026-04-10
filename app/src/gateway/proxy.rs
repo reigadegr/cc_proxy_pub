@@ -10,7 +10,7 @@ use hyper::{
 use salvo::{http::ResBody, prelude::*};
 
 use crate::{
-    config::{AtomicConfig, Config, Mode, selector::UpstreamSelector},
+    config::{AtomicConfig, Config, Mode, UpstreamSelector},
     gateway::{
         HttpClient, RequestStats,
         handler::{
