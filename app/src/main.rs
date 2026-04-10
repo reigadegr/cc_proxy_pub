@@ -3,11 +3,11 @@ mod gateway;
 use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
-use cli_req_refiner_config::AtomicConfig;
 use gateway::{
     GatewayHandler,
     handler::{responses_alias_proxy, unified_proxy},
 };
+use my_config::AtomicConfig;
 use salvo::{affix_state, prelude::*};
 use tracing::info;
 use tracing_subscriber::{
@@ -76,8 +76,8 @@ async fn main() -> anyhow::Result<()> {
         .push(Router::with_path("v1/{**rest}").goal(unified_proxy));
 
     // 启动服务器
-    let acceptor = TcpListener::new(listen_addr.clone()).bind().await;
-    info!("Server listening on {}", listen_addr);
+    info!("Server listening on {}", &listen_addr);
+    let acceptor = TcpListener::new(listen_addr).bind().await;
 
     Server::new(acceptor).serve(router).await;
 

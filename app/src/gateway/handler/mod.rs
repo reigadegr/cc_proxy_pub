@@ -7,7 +7,7 @@ pub mod thinking_patch;
 pub mod tool_desc;
 pub mod utils;
 
-use cli_req_refiner_config::Mode;
+use my_config::Mode;
 use salvo::prelude::*;
 
 use crate::gateway::{

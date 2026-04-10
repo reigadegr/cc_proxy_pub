@@ -7,7 +7,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-cli_req_refiner_config = { path = "../crates/config" }
+my_config = { path = "../crates/config" }
 anyhow = "1.0.102"
 futures-util = { version = "0.3.32", default-features = false, features = [
   "std",

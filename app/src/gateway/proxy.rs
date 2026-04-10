@@ -7,9 +7,8 @@ use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::{
     Request as HyperRequest, Response as HyperResponse, body::Incoming, http::response::Parts,
 };
+use my_config::{AtomicConfig, Config, Mode, UpstreamSelector};
 use salvo::{http::ResBody, prelude::*};
-
-use cli_req_refiner_config::{AtomicConfig, Config, Mode, UpstreamSelector};
 
 use crate::gateway::{
     HttpClient, RequestStats,
@@ -757,13 +756,13 @@ mod tests {
     use http::uri::Scheme;
     use http_body_util::Full;
     use hyper::Request as HyperRequest;
+    use my_config::{Config, Mode, OptimizationConfig};
     use salvo::{Request, http::StatusCode};
 
     use super::{
         ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body, proxy_plan_for_mode,
         should_retry_upstream_status,
     };
-    use cli_req_refiner_config::{Config, Mode, OptimizationConfig};
 
     fn make_request(user_agent: &str) -> Request {
         let req_result = HyperRequest::builder()

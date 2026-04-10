@@ -11,10 +11,10 @@ pub use response_builder::OptimizationResponse;
 
 #[cfg(test)]
 mod tests {
+    use my_config::OptimizationConfig;
     use serde_json::{Value, json};
 
     use super::try_local_optimization;
-    use cli_req_refiner_config::OptimizationConfig;
 
     fn to_json_bytes(value: &Value) -> Vec<u8> {
         serde_json::to_vec(value).unwrap_or_default()

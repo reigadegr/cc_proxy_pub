@@ -2,10 +2,10 @@ use std::borrow::Cow;
 
 use anyhow::{Result, bail};
 use bytes::Bytes;
-use cli_req_refiner_config::Config;
 use http::HeaderMap;
 use http_body_util::BodyExt;
 use hyper::header::{HeaderName, HeaderValue};
+use my_config::Config;
 use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;

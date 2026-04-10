@@ -1,5 +1,5 @@
 [package]
-name = "cli_req_refiner_config"
+name = "my_config"
 version.workspace = true
 edition.workspace = true
 

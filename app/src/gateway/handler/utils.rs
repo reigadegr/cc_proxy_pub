@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use cli_req_refiner_config::AtomicConfig;
+use my_config::AtomicConfig;
 use salvo::prelude::*;
 
 use crate::gateway::{HttpClient, RequestStats};
