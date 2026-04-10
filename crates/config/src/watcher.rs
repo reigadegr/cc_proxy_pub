@@ -6,7 +6,7 @@ use notify::{
 };
 use tracing::{error, info};
 
-use super::runtime::AtomicConfig;
+use crate::AtomicConfig;
 
 pub fn start_config_watcher(config: Arc<AtomicConfig>) {
     std::thread::spawn(move || {

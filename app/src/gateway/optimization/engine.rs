@@ -4,7 +4,7 @@ use super::{
     OptimizationResponse, command_utils, response_builder,
     rules::{OptimizationRuleMatch, detect_request_rule, detect_url_rule},
 };
-use crate::config::OptimizationConfig;
+use cli_req_refiner_config::OptimizationConfig;
 
 #[cfg(test)]
 pub fn try_local_optimization(

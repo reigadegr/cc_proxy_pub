@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use anyhow::{Result, bail};
 use bytes::Bytes;
+use cli_req_refiner_config::Config;
 use http::HeaderMap;
 use http_body_util::BodyExt;
 use hyper::header::{HeaderName, HeaderValue};
@@ -9,20 +10,17 @@ use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
 
-use crate::{
-    config::Config,
-    gateway::{
-        handler::{
-            content_filter::filter_content_strings_in_json,
-            content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
-            system_prompt::filter_system_prompts_in_json,
-            tool_desc::prune_tools_by_description_in_json,
-        },
-        optimization::{
-            OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
-        },
-        service::log_full_response,
+use crate::gateway::{
+    handler::{
+        content_filter::filter_content_strings_in_json,
+        content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
+        system_prompt::filter_system_prompts_in_json,
+        tool_desc::prune_tools_by_description_in_json,
     },
+    optimization::{
+        OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
+    },
+    service::log_full_response,
 };
 
 pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {

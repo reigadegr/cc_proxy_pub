@@ -7,7 +7,11 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+arc-swap = "1.9.1"
+notify = "8.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
+taplo = "0.14.0"
+toml = "1.1.2"
+tracing = "0.1.44"
 
 [dev-dependencies]
-toml = "1.1.2"

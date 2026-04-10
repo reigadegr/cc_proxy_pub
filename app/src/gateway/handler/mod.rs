@@ -7,14 +7,12 @@ pub mod thinking_patch;
 pub mod tool_desc;
 pub mod utils;
 
+use cli_req_refiner_config::Mode;
 use salvo::prelude::*;
 
-use crate::{
-    config::Mode,
-    gateway::{
-        handler::utils::setup_handler_state,
-        proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy},
-    },
+use crate::gateway::{
+    handler::utils::setup_handler_state,
+    proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

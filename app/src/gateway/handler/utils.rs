@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
+use cli_req_refiner_config::AtomicConfig;
 use salvo::prelude::*;
 
-use crate::{
-    config::AtomicConfig,
-    gateway::{HttpClient, RequestStats},
-};
+use crate::gateway::{HttpClient, RequestStats};
 
 pub fn setup_handler_state(
     depot: &Depot,

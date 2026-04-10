@@ -9,22 +9,21 @@ use hyper::{
 };
 use salvo::{http::ResBody, prelude::*};
 
-use crate::{
-    config::{AtomicConfig, Config, Mode, UpstreamSelector},
-    gateway::{
-        HttpClient, RequestStats,
-        handler::{
-            request::{
-                filter_req_body, get_req_body, log_request_meta, make_proxy_url,
-                override_model_in_body, parse_body_json, req_local_intercept_by_url,
-                req_local_intercept_from_json, serialize_body_json,
-            },
-            response::decompress_gzip_if_needed,
-            system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt_in_json},
-            thinking_patch::patch_reasoning_for_thinking_mode_in_json,
+use cli_req_refiner_config::{AtomicConfig, Config, Mode, UpstreamSelector};
+
+use crate::gateway::{
+    HttpClient, RequestStats,
+    handler::{
+        request::{
+            filter_req_body, get_req_body, log_request_meta, make_proxy_url,
+            override_model_in_body, parse_body_json, req_local_intercept_by_url,
+            req_local_intercept_from_json, serialize_body_json,
         },
-        service::{calculate_tokens, calculate_tokens_from_json, log_full_body, log_full_response},
+        response::decompress_gzip_if_needed,
+        system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt_in_json},
+        thinking_patch::patch_reasoning_for_thinking_mode_in_json,
     },
+    service::{calculate_tokens, calculate_tokens_from_json, log_full_body, log_full_response},
 };
 
 #[derive(Clone, Copy)]
@@ -764,7 +763,7 @@ mod tests {
         ProxyKind, ProxyPlan, build_proxy_request, prepare_request_body, proxy_plan_for_mode,
         should_retry_upstream_status,
     };
-    use crate::config::{Config, Mode, OptimizationConfig};
+    use cli_req_refiner_config::{Config, Mode, OptimizationConfig};
 
     fn make_request(user_agent: &str) -> Request {
         let req_result = HyperRequest::builder()

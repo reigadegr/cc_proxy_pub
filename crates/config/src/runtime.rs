@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 use arc_swap::{ArcSwap, Guard};
 use tracing::{error, info};
 
-use super::{
+use crate::{
     Config, UpstreamConfig, UpstreamSelector, enabled_upstream_count,
     loader::{load_from_file, load_initial_config, resolve_config_path},
     watcher::start_config_watcher,
@@ -13,12 +13,13 @@ use super::{
 pub struct AtomicConfig {
     inner: ArcSwap<Config>,
     config_path: std::path::PathBuf,
-    /// Upstream `选择器（双层轮询：先upstream，后api_keys`）
+    /// Upstream 选择器（双层轮询：先 upstream，后 `api_keys`）
     upstream_selector: ArcSwap<Option<Arc<UpstreamSelector>>>,
 }
 
 impl AtomicConfig {
     /// 初始化配置，从指定路径或默认路径加载
+    #[must_use]
     pub fn init() -> Self {
         let config_path = resolve_config_path();
         let config = load_initial_config(&config_path);

@@ -14,7 +14,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::try_local_optimization;
-    use crate::config::OptimizationConfig;
+    use cli_req_refiner_config::OptimizationConfig;
 
     fn to_json_bytes(value: &Value) -> Vec<u8> {
         serde_json::to_vec(value).unwrap_or_default()

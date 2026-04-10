@@ -1,10 +1,9 @@
-mod config;
 mod gateway;
 
 use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
-use config::AtomicConfig;
+use cli_req_refiner_config::AtomicConfig;
 use gateway::{
     GatewayHandler,
     handler::{responses_alias_proxy, unified_proxy},

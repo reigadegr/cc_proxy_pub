@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::detection;
-use crate::config::OptimizationConfig;
+use cli_req_refiner_config::OptimizationConfig;
 
 pub enum OptimizationRuleMatch {
     CountTokensUrl,
