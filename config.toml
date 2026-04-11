@@ -6,6 +6,8 @@
 [server]
 # 服务监听端口
 port = 9077
+# 强制指定 upstream 下标，-1 表示按默认负载均衡；非 -1 时固定命中对应上游并只轮询其 api_keys
+force_upstream_index = -1
 
 # 是否打印请求体
 log_req_body = false

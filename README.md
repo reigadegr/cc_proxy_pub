@@ -163,6 +163,8 @@ sh build_native_stable.sh r
 [server]
 # 服务监听端口（默认 9077，修改后需重启服务）
 port = 9077
+# 强制指定 upstream 下标，默认 -1 表示按负载均衡选择；非 -1 时固定命中对应上游并只轮询其 API Key
+force_upstream_index = -1
 
 # 是否打印请求体
 log_req_body = false
@@ -216,6 +218,7 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 ```
 
 服务默认监听 `0.0.0.0:9077`，可通过 `config.toml` 中的 `[server].port` 修改。
+`server.force_upstream_index` 默认为 `-1`，表示按原有双层轮询负载均衡；当设置为 `0`、`1` 等非负值时，会按 `[[upstream]]` 的下标强制选择对应上游，并且只在该上游的 `api_keys` 内轮询。
 旧版顶层 `port`、`log_req_body`、`log_res_body`、`user_agent_global_*` 仍兼容读取，推荐逐步迁移到 `[server]` 配置块。
 
 ---
@@ -245,6 +248,7 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 | 字段 | 类型 | 默认值 | 说明 |
 |:-----|:-----|:-------|:-----|
 | `server.port` | `u16` | `9077` | 服务监听端口，修改后需重启进程生效 |
+| `server.force_upstream_index` | `isize` | `-1` | 强制指定 `[[upstream]]` 的下标；`-1` 表示按默认双层轮询负载均衡，`0` 开始计数 |
 | `server.log_req_body` | `bool` | `false` | 是否打印请求体 |
 | `server.log_res_body` | `bool` | `false` | 是否打印响应体 |
 

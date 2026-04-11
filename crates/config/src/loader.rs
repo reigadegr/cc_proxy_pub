@@ -6,7 +6,7 @@ use std::{
 
 use tracing::{info, warn};
 
-use crate::{Config, enabled_upstream_count, format::format_toml};
+use crate::{Config, UpstreamConfig, enabled_upstream_count, format::format_toml};
 
 pub fn resolve_config_path() -> PathBuf {
     env::args()
@@ -64,8 +64,9 @@ pub fn log_loaded_config(config: &Config) {
     info!("✅ 配置已加载:");
     info!("listen_port: {}", config.server.port);
     info!(
-        "force_upstream_index: {}",
-        config.server.force_upstream_index
+        "force_upstream_index: {} ({})",
+        config.server.force_upstream_index,
+        format_forced_upstream_target(&config.upstream, config.server.force_upstream_index)
     );
     info!(
         "upstream 数量: {} 个（启用 {} 个）",
@@ -105,4 +106,69 @@ pub fn log_loaded_config(config: &Config) {
     );
     info!("log_req_body: {}", config.server.log_req_body);
     info!("log_res_body: {}", config.server.log_res_body);
+}
+
+pub fn format_forced_upstream_target(
+    upstreams: &[UpstreamConfig],
+    force_upstream_index: isize,
+) -> String {
+    if force_upstream_index < 0 {
+        return "disabled".to_string();
+    }
+
+    match usize::try_from(force_upstream_index)
+        .ok()
+        .and_then(|index| upstreams.get(index).map(|upstream| (index, upstream)))
+    {
+        Some((index, upstream)) => format!(
+            "target=[{}] name={}, base_url={}",
+            index,
+            if upstream.name.is_empty() {
+                "-"
+            } else {
+                upstream.name.as_str()
+            },
+            upstream.base_url
+        ),
+        None => format!("target not found, upstream_count={}", upstreams.len()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Mode, UpstreamModes};
+
+    use super::*;
+
+    #[test]
+    fn format_forced_upstream_target_returns_target_details() {
+        let upstreams = vec![UpstreamConfig {
+            enable: true,
+            name: "primary".to_string(),
+            base_url: "https://primary.example.com".to_string(),
+            model: "model-a".to_string(),
+            api_keys: vec!["key-1".to_string()],
+            user_agent_claude: None,
+            user_agent_codex: None,
+            mode: UpstreamModes::from(vec![Mode::AnthropicDirect]),
+        }];
+
+        assert_eq!(
+            format_forced_upstream_target(&upstreams, 0),
+            "target=[0] name=primary, base_url=https://primary.example.com"
+        );
+    }
+
+    #[test]
+    fn format_forced_upstream_target_returns_disabled_when_force_is_negative() {
+        assert_eq!(format_forced_upstream_target(&[], -1), "disabled");
+    }
+
+    #[test]
+    fn format_forced_upstream_target_returns_out_of_range_when_target_is_missing() {
+        assert_eq!(
+            format_forced_upstream_target(&[], 3),
+            "target not found, upstream_count=0"
+        );
+    }
 }

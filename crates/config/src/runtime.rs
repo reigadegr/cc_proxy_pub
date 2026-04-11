@@ -5,7 +5,9 @@ use tracing::{error, info};
 
 use crate::{
     Config, UpstreamConfig, UpstreamSelector, enabled_upstream_count,
-    loader::{load_from_file, load_initial_config, resolve_config_path},
+    loader::{
+        format_forced_upstream_target, load_from_file, load_initial_config, resolve_config_path,
+    },
     watcher::start_config_watcher,
 };
 
@@ -102,8 +104,13 @@ impl AtomicConfig {
 
                     if force_upstream_index_changed {
                         info!(
-                            "force_upstream_index: {}→{}",
-                            old.server.force_upstream_index, new_config.server.force_upstream_index
+                            "force_upstream_index: {}→{} ({})",
+                            old.server.force_upstream_index,
+                            new_config.server.force_upstream_index,
+                            format_forced_upstream_target(
+                                &new_config.upstream,
+                                new_config.server.force_upstream_index
+                            )
                         );
                     }
 
