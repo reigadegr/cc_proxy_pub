@@ -91,7 +91,7 @@ pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Respo
 #[cfg(test)]
 mod tests {
     use salvo::{
-        Request, Router, Service, handler,
+        Request, Router, Service,
         http::{StatusCode, uri::Scheme},
         test::TestClient,
     };
@@ -161,6 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn route_table_only_adds_exact_responses_short_path() {
+        use salvo::prelude::endpoint;
         #[endpoint]
         async fn alias_marker() {}
 
