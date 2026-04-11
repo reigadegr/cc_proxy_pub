@@ -7,12 +7,12 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-my_selector = { path = "../selector" }
-arc-swap = "1.9.1"
-notify = "8.2.0"
-serde = { version = "1.0.228", features = ["derive"] }
-taplo = "0.14.0"
-toml = "1.1.2"
-tracing = "0.1.44"
+my_selector.workspace = true
+arc-swap.workspace = true
+notify.workspace = true
+serde.workspace = true
+taplo.workspace = true
+toml.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
