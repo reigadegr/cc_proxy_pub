@@ -25,6 +25,8 @@ pub struct UpstreamSelector {
     upstreams: Vec<UpstreamConfig>,
     /// 按接口区分的全局默认 User-Agent
     global_user_agents: GlobalUserAgentConfig,
+    /// 强制使用指定序号的 upstream；`-1` 表示按默认轮询
+    force_upstream_index: isize,
     /// `anthropic` 模式独立轮询计数
     next_index_anthropic: AtomicUsize,
     /// `openai_responses` 模式独立轮询计数
@@ -43,6 +45,7 @@ impl UpstreamSelector {
                 claude: global_user_agent,
                 codex: None,
             },
+            -1,
             upstreams,
         )
     }
@@ -50,6 +53,7 @@ impl UpstreamSelector {
     #[must_use]
     pub fn new_with_global_user_agents(
         global_user_agents: GlobalUserAgentConfig,
+        force_upstream_index: isize,
         upstreams: Vec<UpstreamConfig>,
     ) -> Option<Self> {
         if upstreams.is_empty() {
@@ -58,6 +62,7 @@ impl UpstreamSelector {
         Some(Self {
             upstreams,
             global_user_agents,
+            force_upstream_index,
             next_index_anthropic: AtomicUsize::new(0),
             next_index_openai_responses: AtomicUsize::new(0),
             next_index_openai_chat: AtomicUsize::new(0),
@@ -82,8 +87,21 @@ impl UpstreamSelector {
             .or_else(|| self.global_user_agents.resolve_for_mode(expected_mode))
     }
 
+    fn forced_upstream_for_mode(&self, expected_mode: Mode) -> Option<(usize, &UpstreamConfig)> {
+        let index = usize::try_from(self.force_upstream_index).ok()?;
+        let upstream = self.upstreams.get(index)?;
+        upstream
+            .mode
+            .supports(expected_mode)
+            .then_some((index, upstream))
+    }
+
     /// 获取指定 mode 当前可用的 upstream 数量
     pub fn matching_count_by_mode(&self, expected_mode: Mode) -> usize {
+        if self.force_upstream_index >= 0 {
+            return usize::from(self.forced_upstream_for_mode(expected_mode).is_some());
+        }
+
         self.upstreams
             .iter()
             .filter(|upstream| upstream.enable && upstream.mode.supports(expected_mode))
@@ -109,6 +127,28 @@ impl UpstreamSelector {
     pub fn next_by_mode(&self, expected_mode: Mode) -> Option<UpstreamSelection<'_>> {
         if self.upstreams.is_empty() {
             return None;
+        }
+
+        if let Some((upstream_idx, upstream)) = self.forced_upstream_for_mode(expected_mode) {
+            let mode_idx = self
+                .mode_counter(expected_mode)
+                .fetch_add(1, Ordering::Relaxed);
+            let api_key = if upstream.api_keys.is_empty() {
+                ""
+            } else {
+                let key_idx = mode_idx % upstream.api_keys.len();
+                &upstream.api_keys[key_idx]
+            };
+
+            return Some((
+                upstream_idx,
+                &upstream.name,
+                &upstream.base_url,
+                &upstream.model,
+                api_key,
+                self.resolve_user_agent(upstream, expected_mode),
+                expected_mode,
+            ));
         }
 
         let matching_count = self.matching_count_by_mode(expected_mode);
@@ -444,6 +484,107 @@ mod tests {
     }
 
     #[test]
+    fn test_force_upstream_index_ignores_enable_and_only_round_robins_keys() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                name: "first-upstream".to_string(),
+                base_url: "https://first.example.com".to_string(),
+                model: "model-1".to_string(),
+                api_keys: vec!["key-1a".to_string(), "key-1b".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: vec![Mode::AnthropicDirect].into(),
+            },
+            UpstreamConfig {
+                enable: false,
+                name: "forced-upstream".to_string(),
+                base_url: "https://forced.example.com".to_string(),
+                model: "model-2".to_string(),
+                api_keys: vec!["key-2a".to_string(), "key-2b".to_string()],
+                user_agent_claude: Some("Forced-UA/1.0".to_string()),
+                user_agent_codex: None,
+                mode: vec![Mode::AnthropicDirect].into(),
+            },
+        ];
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig::default(),
+            1,
+            upstreams,
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 1);
+
+        let first = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("应强制命中指定 upstream");
+        let second = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("强制模式下应继续命中同一 upstream");
+        let third = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("强制模式下应只在指定 upstream 的 keys 内轮询");
+
+        assert_eq!(first.0, 1);
+        assert_eq!(first.4, "key-2a");
+        assert_eq!(first.5, Some("Forced-UA/1.0"));
+        assert_eq!(second.0, 1);
+        assert_eq!(second.4, "key-2b");
+        assert_eq!(third.0, 1);
+        assert_eq!(third.4, "key-2a");
+    }
+
+    #[test]
+    fn test_force_upstream_index_respects_mode_support() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                name: "anthropic-upstream".to_string(),
+                base_url: "https://anthropic.example.com".to_string(),
+                model: "model-a".to_string(),
+                api_keys: vec!["key-a".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: vec![Mode::AnthropicDirect].into(),
+            },
+            UpstreamConfig {
+                enable: false,
+                name: "responses-upstream".to_string(),
+                base_url: "https://responses.example.com".to_string(),
+                model: "model-r".to_string(),
+                api_keys: vec!["key-r".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: vec![Mode::OpenAIResponses].into(),
+            },
+        ];
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig::default(),
+            1,
+            upstreams,
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 0);
+        assert!(selector.next_by_mode(Mode::AnthropicDirect).is_none());
+        assert_eq!(selector.matching_count_by_mode(Mode::OpenAIResponses), 1);
+    }
+
+    #[test]
+    fn test_force_upstream_index_out_of_range_returns_none() {
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig::default(),
+            5,
+            create_test_upstreams(),
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 0);
+        assert!(selector.next_by_mode(Mode::AnthropicDirect).is_none());
+    }
+
+    #[test]
     fn test_next_by_mode_returns_configured_user_agent() {
         let upstreams = vec![UpstreamConfig {
             enable: true,
@@ -482,6 +623,7 @@ mod tests {
                 claude: Some("Global-UA/1.0".to_string()),
                 codex: None,
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -510,6 +652,7 @@ mod tests {
                 claude: Some("Global-UA/1.0".to_string()),
                 codex: None,
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -538,6 +681,7 @@ mod tests {
                 claude: Some("Claude-Global-UA/2.0".to_string()),
                 codex: Some("Codex-Global-UA/3.0".to_string()),
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -570,6 +714,7 @@ mod tests {
                 claude: Some("Claude-Global-UA/2.0".to_string()),
                 codex: Some("Codex-Global-UA/3.0".to_string()),
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -642,6 +787,7 @@ mod tests {
                 claude: Some("Claude-Global-UA/2.0".to_string()),
                 codex: Some("Codex-Global-UA/3.0".to_string()),
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -677,6 +823,7 @@ mod openai_chat_tests {
                 claude: None,
                 codex: Some("Codex-Global-UA/5.0".to_string()),
             },
+            -1,
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");

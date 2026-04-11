@@ -855,6 +855,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn forced_upstream_mode_limits_retry_attempts_to_one() {
+        let selector = my_config::UpstreamSelector::new_with_global_user_agents(
+            my_config::GlobalUserAgentConfig::default(),
+            1,
+            vec![
+                my_config::UpstreamConfig {
+                    enable: true,
+                    name: "first".to_string(),
+                    base_url: "https://first.example.com".to_string(),
+                    model: "model-1".to_string(),
+                    api_keys: vec!["key-1".to_string()],
+                    user_agent_claude: None,
+                    user_agent_codex: None,
+                    mode: vec![Mode::AnthropicDirect].into(),
+                },
+                my_config::UpstreamConfig {
+                    enable: false,
+                    name: "forced".to_string(),
+                    base_url: "https://forced.example.com".to_string(),
+                    model: "model-2".to_string(),
+                    api_keys: vec!["key-2".to_string()],
+                    user_agent_claude: None,
+                    user_agent_codex: None,
+                    mode: vec![Mode::AnthropicDirect].into(),
+                },
+            ],
+        );
+        let Some(selector) = selector else {
+            panic!("测试数据已确保 upstreams 非空");
+        };
+
+        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 1);
+    }
+
     fn anthropic_plan() -> ProxyPlan {
         proxy_plan_for_mode(Mode::AnthropicDirect)
     }

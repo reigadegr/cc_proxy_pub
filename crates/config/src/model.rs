@@ -20,6 +20,9 @@ pub struct ServerConfig {
     /// 服务监听端口
     #[serde(default = "default_port")]
     pub port: u16,
+    /// 强制使用指定序号的 upstream；`-1` 表示按默认规则轮询
+    #[serde(default = "default_force_upstream_index")]
+    pub force_upstream_index: isize,
     /// 是否打印请求体
     #[serde(default)]
     pub log_req_body: bool,
@@ -38,6 +41,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             port: default_port(),
+            force_upstream_index: default_force_upstream_index(),
             log_req_body: false,
             log_res_body: false,
             user_agent_global_claude: None,
@@ -103,6 +107,8 @@ struct PartialServerConfig {
     #[serde(default)]
     port: Option<u16>,
     #[serde(default)]
+    force_upstream_index: Option<isize>,
+    #[serde(default)]
     log_req_body: Option<bool>,
     #[serde(default)]
     log_res_body: Option<bool>,
@@ -118,6 +124,10 @@ impl PartialServerConfig {
 
         ServerConfig {
             port: self.port.or(legacy.port).unwrap_or(defaults.port),
+            force_upstream_index: self
+                .force_upstream_index
+                .or(legacy.force_upstream_index)
+                .unwrap_or(defaults.force_upstream_index),
             log_req_body: self
                 .log_req_body
                 .or(legacy.log_req_body)
@@ -161,12 +171,17 @@ pub const fn default_port() -> u16 {
     9077
 }
 
+#[must_use]
+pub const fn default_force_upstream_index() -> isize {
+    -1
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use my_selector::{GlobalUserAgentConfig, Mode, UpstreamModes};
 
-    use super::{Config, ServerConfig, default_port};
+    use super::{Config, ServerConfig, default_force_upstream_index, default_port};
 
     #[test]
     fn upstream_enable_defaults_to_true() {
@@ -183,8 +198,25 @@ mod tests {
 
         assert_eq!(config.upstream.len(), 1);
         assert!(config.upstream[0].enable);
+        assert_eq!(
+            config.server.force_upstream_index,
+            default_force_upstream_index()
+        );
         assert!(config.upstream[0].name.is_empty());
         assert_eq!(config.upstream[0].mode, UpstreamModes::default());
+    }
+
+    #[test]
+    fn server_force_upstream_index_deserializes_when_present() {
+        let config: Config = toml::from_str(
+            r"
+                [server]
+                force_upstream_index = 2
+            ",
+        )
+        .unwrap();
+
+        assert_eq!(config.server.force_upstream_index, 2);
     }
 
     #[test]
@@ -474,6 +506,7 @@ mod tests {
             config.server,
             ServerConfig {
                 port: 19077,
+                force_upstream_index: default_force_upstream_index(),
                 log_req_body: true,
                 log_res_body: true,
                 user_agent_global_claude: Some("Claude-Global/9.9.9".to_string()),
