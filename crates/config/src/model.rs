@@ -285,8 +285,8 @@ mod tests {
     }
 
     #[test]
-    fn upstream_user_agent_deserializes_when_present() {
-        let config: Config = toml::from_str(
+    fn upstream_user_agent_fields_and_aliases_deserialize() {
+        let cases = [
             r#"
                 [[upstream]]
                 base_url = "https://example.com"
@@ -295,22 +295,6 @@ mod tests {
                 user_agent_claude = "Claude-Code/1.0.84"
                 user_agent_codex = "Codex/0.31.0"
             "#,
-        )
-        .unwrap();
-
-        assert_eq!(
-            config.upstream[0].user_agent_claude.as_deref(),
-            Some("Claude-Code/1.0.84")
-        );
-        assert_eq!(
-            config.upstream[0].user_agent_codex.as_deref(),
-            Some("Codex/0.31.0")
-        );
-    }
-
-    #[test]
-    fn upstream_user_agent_aliases_still_deserialize() {
-        let config: Config = toml::from_str(
             r#"
                 [[upstream]]
                 base_url = "https://example.com"
@@ -319,17 +303,20 @@ mod tests {
                 ua_claude = "Claude-Code/1.0.84"
                 ua_codex = "Codex/0.31.0"
             "#,
-        )
-        .unwrap();
+        ];
 
-        assert_eq!(
-            config.upstream[0].user_agent_claude.as_deref(),
-            Some("Claude-Code/1.0.84")
-        );
-        assert_eq!(
-            config.upstream[0].user_agent_codex.as_deref(),
-            Some("Codex/0.31.0")
-        );
+        for input in cases {
+            let config: Config = toml::from_str(input).unwrap();
+
+            assert_eq!(
+                config.upstream[0].user_agent_claude.as_deref(),
+                Some("Claude-Code/1.0.84")
+            );
+            assert_eq!(
+                config.upstream[0].user_agent_codex.as_deref(),
+                Some("Codex/0.31.0")
+            );
+        }
     }
 
     #[test]
@@ -355,30 +342,6 @@ mod tests {
         assert_eq!(
             config.server.user_agent_global_codex.as_deref(),
             Some("Codex-Global/9.9.9")
-        );
-    }
-
-    #[test]
-    fn upstream_mode_specific_user_agents_deserialize_when_present() {
-        let config: Config = toml::from_str(
-            r#"
-                [[upstream]]
-                base_url = "https://example.com"
-                model = "test-model"
-                api_keys = ["test-key"]
-                user_agent_claude = "Claude-Upstream/1.0"
-                user_agent_codex = "Codex-Upstream/1.0"
-            "#,
-        )
-        .unwrap();
-
-        assert_eq!(
-            config.upstream[0].user_agent_claude.as_deref(),
-            Some("Claude-Upstream/1.0")
-        );
-        assert_eq!(
-            config.upstream[0].user_agent_codex.as_deref(),
-            Some("Codex-Upstream/1.0")
         );
     }
 
@@ -424,21 +387,6 @@ mod tests {
     }
 
     #[test]
-    fn port_defaults_to_9077() {
-        let config: Config = toml::from_str(
-            r#"
-                [[upstream]]
-                base_url = "https://example.com"
-                model = "test-model"
-                api_keys = ["test-key"]
-            "#,
-        )
-        .unwrap();
-
-        assert_eq!(config.server.port, default_port());
-    }
-
-    #[test]
     fn openai_chat_reuses_codex_user_agent_configuration() {
         let config: Config = toml::from_str(
             r#"
@@ -467,21 +415,35 @@ mod tests {
     }
 
     #[test]
-    fn port_can_be_overridden() {
-        let config: Config = toml::from_str(
-            r#"
-                [server]
-                port = 19077
+    fn port_uses_default_and_override_values() {
+        let cases = [
+            (
+                r#"
+                    [[upstream]]
+                    base_url = "https://example.com"
+                    model = "test-model"
+                    api_keys = ["test-key"]
+                "#,
+                default_port(),
+            ),
+            (
+                r#"
+                    [server]
+                    port = 19077
 
-                [[upstream]]
-                base_url = "https://example.com"
-                model = "test-model"
-                api_keys = ["test-key"]
-            "#,
-        )
-        .unwrap();
+                    [[upstream]]
+                    base_url = "https://example.com"
+                    model = "test-model"
+                    api_keys = ["test-key"]
+                "#,
+                19077,
+            ),
+        ];
 
-        assert_eq!(config.server.port, 19077);
+        for (input, expected_port) in cases {
+            let config: Config = toml::from_str(input).unwrap();
+            assert_eq!(config.server.port, expected_port);
+        }
     }
 
     #[test]

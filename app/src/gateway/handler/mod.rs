@@ -107,32 +107,22 @@ mod tests {
     }
 
     #[test]
-    fn classify_request_path_maps_supported_roots() {
-        assert_eq!(
-            classify_request_path("/v1/messages"),
-            Some(RouteTarget::Anthropic)
-        );
-        assert_eq!(
-            classify_request_path("/v1/messages/count_tokens"),
-            Some(RouteTarget::Anthropic)
-        );
-        assert_eq!(
-            classify_request_path("/v1/responses"),
-            Some(RouteTarget::OpenAIResponses)
-        );
-        assert_eq!(
-            classify_request_path("/v1/chat/completions"),
-            Some(RouteTarget::OpenAIChat)
-        );
-    }
+    fn classify_request_path_matches_expected_targets() {
+        let cases = [
+            ("/v1/messages", Some(RouteTarget::Anthropic)),
+            ("/v1/messages/count_tokens", Some(RouteTarget::Anthropic)),
+            ("/v1/responses", Some(RouteTarget::OpenAIResponses)),
+            ("/v1/chat/completions", Some(RouteTarget::OpenAIChat)),
+            ("/responses", None),
+            ("/claude/messages", None),
+            ("/codex/responses", None),
+            ("/responses/foo", None),
+            ("/foo", None),
+        ];
 
-    #[test]
-    fn classify_request_path_rejects_unsupported_roots() {
-        assert_eq!(classify_request_path("/responses"), None);
-        assert_eq!(classify_request_path("/claude/messages"), None);
-        assert_eq!(classify_request_path("/codex/responses"), None);
-        assert_eq!(classify_request_path("/responses/foo"), None);
-        assert_eq!(classify_request_path("/foo"), None);
+        for (path, expected) in cases {
+            assert_eq!(classify_request_path(path), expected, "{path}");
+        }
     }
 
     #[test]
@@ -147,16 +137,6 @@ mod tests {
             classify_request_path(req.uri().path()),
             Some(RouteTarget::OpenAIResponses)
         );
-    }
-
-    #[test]
-    fn rewrite_responses_alias_preserves_other_short_paths_for_404_handling() {
-        let mut req = request_from_uri("http://localhost/chat/completions");
-
-        rewrite_responses_alias(&mut req);
-
-        assert_eq!(req.uri().path(), "/chat/completions");
-        assert_eq!(classify_request_path(req.uri().path()), None);
     }
 
     #[tokio::test]

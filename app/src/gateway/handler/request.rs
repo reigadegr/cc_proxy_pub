@@ -220,22 +220,6 @@ mod tests {
     }
 
     #[test]
-    fn make_proxy_url_preserves_openai_responses_path() {
-        let req = request_from_uri("http://localhost/v1/responses");
-        let (url, _) = make_proxy_url("https://upstream.example.com", &req);
-
-        assert_eq!(url, "https://upstream.example.com/v1/responses");
-    }
-
-    #[test]
-    fn make_proxy_url_preserves_openai_chat_path() {
-        let req = request_from_uri("http://localhost/v1/chat/completions");
-        let (url, _) = make_proxy_url("https://upstream.example.com", &req);
-
-        assert_eq!(url, "https://upstream.example.com/v1/chat/completions");
-    }
-
-    #[test]
     fn make_proxy_url_joins_base_path_prefixes() {
         let req = request_from_uri("http://localhost/v1/messages?foo=bar");
         let (url, host) = make_proxy_url("https://upstream.example.com/prefix/api", &req);

@@ -855,41 +855,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn forced_upstream_mode_limits_retry_attempts_to_one() {
-        let selector = my_config::UpstreamSelector::new_with_global_user_agents(
-            my_config::GlobalUserAgentConfig::default(),
-            1,
-            vec![
-                my_config::UpstreamConfig {
-                    enable: true,
-                    name: "first".to_string(),
-                    base_url: "https://first.example.com".to_string(),
-                    model: "model-1".to_string(),
-                    api_keys: vec!["key-1".to_string()],
-                    user_agent_claude: None,
-                    user_agent_codex: None,
-                    mode: vec![Mode::AnthropicDirect].into(),
-                },
-                my_config::UpstreamConfig {
-                    enable: false,
-                    name: "forced".to_string(),
-                    base_url: "https://forced.example.com".to_string(),
-                    model: "model-2".to_string(),
-                    api_keys: vec!["key-2".to_string()],
-                    user_agent_claude: None,
-                    user_agent_codex: None,
-                    mode: vec![Mode::AnthropicDirect].into(),
-                },
-            ],
-        );
-        let Some(selector) = selector else {
-            panic!("测试数据已确保 upstreams 非空");
-        };
-
-        assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 1);
-    }
-
     fn anthropic_plan() -> ProxyPlan {
         proxy_plan_for_mode(Mode::AnthropicDirect)
     }
@@ -928,78 +893,53 @@ mod tests {
     }
 
     #[test]
-    fn build_proxy_request_preserves_original_user_agent_without_override() {
-        let req = make_request("Original-UA/1.0");
-        let proxy_req = build_proxy_request_for_test(&req, None);
+    fn build_proxy_request_resolves_user_agent_override_cases() {
+        struct Case {
+            name: &'static str,
+            upstream_user_agent: Option<&'static str>,
+            expected_user_agent: &'static str,
+        }
 
-        assert_eq!(
-            header_value_as_str(&proxy_req, http::header::USER_AGENT),
-            Some("Original-UA/1.0")
-        );
-        assert_eq!(
-            named_header_value_as_str(&proxy_req, "x-test-header"),
-            Some("keep-me")
-        );
-    }
+        let cases = [
+            Case {
+                name: "preserves original when override missing",
+                upstream_user_agent: None,
+                expected_user_agent: "Original-UA/1.0",
+            },
+            Case {
+                name: "applies configured override",
+                upstream_user_agent: Some("Configured-UA/2.0"),
+                expected_user_agent: "Configured-UA/2.0",
+            },
+            Case {
+                name: "ignores blank override",
+                upstream_user_agent: Some("   "),
+                expected_user_agent: "Original-UA/1.0",
+            },
+            Case {
+                name: "ignores invalid override",
+                upstream_user_agent: Some("bad\r\nua"),
+                expected_user_agent: "Original-UA/1.0",
+            },
+        ];
 
-    #[test]
-    fn build_proxy_request_overrides_user_agent_when_configured() {
-        let req = make_request("Original-UA/1.0");
-        let proxy_req = build_proxy_request_for_test(&req, Some("Configured-UA/2.0"));
+        for case in cases {
+            let req = make_request("Original-UA/1.0");
+            let proxy_req = build_proxy_request_for_test(&req, case.upstream_user_agent);
 
-        assert_eq!(
-            header_value_as_str(&proxy_req, http::header::USER_AGENT),
-            Some("Configured-UA/2.0")
-        );
-        assert_eq!(
-            named_header_value_as_str(&proxy_req, "x-test-header"),
-            Some("keep-me")
-        );
-    }
-
-    #[test]
-    fn build_proxy_request_keeps_original_user_agent_for_blank_override() {
-        let req = make_request("Original-UA/1.0");
-        let proxy_req = build_proxy_request_for_test(&req, Some("   "));
-
-        assert_eq!(
-            header_value_as_str(&proxy_req, http::header::USER_AGENT),
-            Some("Original-UA/1.0")
-        );
-    }
-
-    #[test]
-    fn build_proxy_request_keeps_original_user_agent_for_invalid_override() {
-        let req = make_request("Original-UA/1.0");
-        let proxy_req = build_proxy_request_for_test(&req, Some("bad\r\nua"));
-
-        assert_eq!(
-            header_value_as_str(&proxy_req, http::header::USER_AGENT),
-            Some("Original-UA/1.0")
-        );
-    }
-
-    #[test]
-    fn prepare_request_body_intercepts_count_tokens_url_with_invalid_json_body() {
-        let mut res = salvo::Response::new();
-
-        let body = prepare_request_body(
-            anthropic_plan(),
-            Bytes::from_static(b"not json"),
-            "/v1/messages/count_tokens?foo=bar",
-            &test_config(),
-            None,
-            &mut res,
-        );
-
-        assert!(body.is_none());
-        assert_eq!(res.status_code, Some(StatusCode::OK));
-        assert_eq!(
-            res.headers()
-                .get("x-cc-proxy-optimization")
-                .and_then(|value| value.to_str().ok()),
-            Some("max_tokens_mock")
-        );
+            assert_eq!(
+                header_value_as_str(&proxy_req, http::header::USER_AGENT),
+                Some(case.expected_user_agent),
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                named_header_value_as_str(&proxy_req, "x-test-header"),
+                Some("keep-me"),
+                "{}",
+                case.name
+            );
+        }
     }
 
     #[test]

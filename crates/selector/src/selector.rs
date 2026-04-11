@@ -585,149 +585,108 @@ mod tests {
     }
 
     #[test]
-    fn test_next_by_mode_returns_configured_user_agent() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "ua-upstream".to_string(),
-            base_url: "https://ua.example.com".to_string(),
-            model: "ua-model".to_string(),
-            api_keys: vec!["ua-key".to_string()],
-            user_agent_claude: Some("Device-D/1.0".to_string()),
-            user_agent_codex: None,
-            mode: vec![Mode::AnthropicDirect].into(),
-        }];
-        let selector =
-            UpstreamSelector::new(None, upstreams).expect("测试数据已确保 upstreams 非空");
+    fn test_next_by_mode_resolves_user_agent_priority() {
+        struct Case {
+            name: &'static str,
+            mode: Mode,
+            upstream_mode: Vec<Mode>,
+            upstream_claude: Option<&'static str>,
+            upstream_codex: Option<&'static str>,
+            global_claude: Option<&'static str>,
+            global_codex: Option<&'static str>,
+            expected_user_agent: Option<&'static str>,
+        }
 
-        let (_, _, _, _, _, user_agent, _) = selector
-            .next_by_mode(Mode::AnthropicDirect)
-            .expect("应能返回 upstream 的 user_agent");
-
-        assert_eq!(user_agent, Some("Device-D/1.0"));
-    }
-
-    #[test]
-    fn test_next_by_mode_falls_back_to_global_user_agent() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "global-ua-upstream".to_string(),
-            base_url: "https://global-ua.example.com".to_string(),
-            model: "ua-model".to_string(),
-            api_keys: vec!["ua-key".to_string()],
-            user_agent_claude: None,
-            user_agent_codex: None,
-            mode: vec![Mode::AnthropicDirect].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: Some("Global-UA/1.0".to_string()),
-                codex: None,
+        let cases = [
+            Case {
+                name: "uses upstream anthropic user agent",
+                mode: Mode::AnthropicDirect,
+                upstream_mode: vec![Mode::AnthropicDirect],
+                upstream_claude: Some("Device-D/1.0"),
+                upstream_codex: None,
+                global_claude: None,
+                global_codex: None,
+                expected_user_agent: Some("Device-D/1.0"),
             },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
-
-        let (_, _, _, _, _, user_agent, _) = selector
-            .next_by_mode(Mode::AnthropicDirect)
-            .expect("应能返回全局 user_agent");
-
-        assert_eq!(user_agent, Some("Global-UA/1.0"));
-    }
-
-    #[test]
-    fn test_next_by_mode_prefers_upstream_user_agent_over_global() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "override-ua-upstream".to_string(),
-            base_url: "https://override-ua.example.com".to_string(),
-            model: "ua-model".to_string(),
-            api_keys: vec!["ua-key".to_string()],
-            user_agent_claude: Some("Upstream-UA/2.0".to_string()),
-            user_agent_codex: None,
-            mode: vec![Mode::AnthropicDirect].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: Some("Global-UA/1.0".to_string()),
-                codex: None,
+            Case {
+                name: "falls back to global anthropic user agent",
+                mode: Mode::AnthropicDirect,
+                upstream_mode: vec![Mode::AnthropicDirect],
+                upstream_claude: None,
+                upstream_codex: None,
+                global_claude: Some("Global-UA/1.0"),
+                global_codex: None,
+                expected_user_agent: Some("Global-UA/1.0"),
             },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
-
-        let (_, _, _, _, _, user_agent, _) = selector
-            .next_by_mode(Mode::AnthropicDirect)
-            .expect("应能返回渠道 user_agent");
-
-        assert_eq!(user_agent, Some("Upstream-UA/2.0"));
-    }
-
-    #[test]
-    fn test_next_by_mode_prefers_upstream_user_agent_over_mode_specific_global_user_agent() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "mode-specific-upstream".to_string(),
-            base_url: "https://mode-specific.example.com".to_string(),
-            model: "ua-model".to_string(),
-            api_keys: vec!["ua-key".to_string()],
-            user_agent_claude: Some("Claude-Upstream-UA/1.0".to_string()),
-            user_agent_codex: Some("Codex-Upstream-UA/1.0".to_string()),
-            mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: Some("Claude-Global-UA/2.0".to_string()),
-                codex: Some("Codex-Global-UA/3.0".to_string()),
+            Case {
+                name: "prefers upstream anthropic user agent over global",
+                mode: Mode::AnthropicDirect,
+                upstream_mode: vec![Mode::AnthropicDirect],
+                upstream_claude: Some("Upstream-UA/2.0"),
+                upstream_codex: None,
+                global_claude: Some("Global-UA/1.0"),
+                global_codex: None,
+                expected_user_agent: Some("Upstream-UA/2.0"),
             },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
-
-        let (_, _, _, _, _, claude_user_agent, _) = selector
-            .next_by_mode(Mode::AnthropicDirect)
-            .expect("应优先返回 upstream 的 user_agent");
-        assert_eq!(claude_user_agent, Some("Claude-Upstream-UA/1.0"));
-
-        let (_, _, _, _, _, codex_user_agent, _) = selector
-            .next_by_mode(Mode::OpenAIResponses)
-            .expect("应优先返回 upstream 的 user_agent");
-        assert_eq!(codex_user_agent, Some("Codex-Upstream-UA/1.0"));
-    }
-
-    #[test]
-    fn test_next_by_mode_prefers_mode_specific_global_user_agent() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "global-mode-specific-upstream".to_string(),
-            base_url: "https://global-mode-specific.example.com".to_string(),
-            model: "ua-model".to_string(),
-            api_keys: vec!["ua-key".to_string()],
-            user_agent_claude: None,
-            user_agent_codex: None,
-            mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: Some("Claude-Global-UA/2.0".to_string()),
-                codex: Some("Codex-Global-UA/3.0".to_string()),
+            Case {
+                name: "prefers upstream codex user agent over global responses",
+                mode: Mode::OpenAIResponses,
+                upstream_mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses],
+                upstream_claude: Some("Claude-Upstream-UA/1.0"),
+                upstream_codex: Some("Codex-Upstream-UA/1.0"),
+                global_claude: Some("Claude-Global-UA/2.0"),
+                global_codex: Some("Codex-Global-UA/3.0"),
+                expected_user_agent: Some("Codex-Upstream-UA/1.0"),
             },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
+            Case {
+                name: "uses mode-specific global codex user agent",
+                mode: Mode::OpenAIResponses,
+                upstream_mode: vec![Mode::AnthropicDirect, Mode::OpenAIResponses],
+                upstream_claude: None,
+                upstream_codex: None,
+                global_claude: Some("Claude-Global-UA/2.0"),
+                global_codex: Some("Codex-Global-UA/3.0"),
+                expected_user_agent: Some("Codex-Global-UA/3.0"),
+            },
+            Case {
+                name: "uses codex global user agent for openai chat",
+                mode: Mode::OpenAIChat,
+                upstream_mode: vec![Mode::OpenAIChat],
+                upstream_claude: None,
+                upstream_codex: None,
+                global_claude: Some("Claude-Global-UA/2.0"),
+                global_codex: Some("Codex-Global-UA/3.0"),
+                expected_user_agent: Some("Codex-Global-UA/3.0"),
+            },
+        ];
 
-        let (_, _, _, _, _, claude_user_agent, _) = selector
-            .next_by_mode(Mode::AnthropicDirect)
-            .expect("应能返回 Claude 全局专属 user_agent");
-        assert_eq!(claude_user_agent, Some("Claude-Global-UA/2.0"));
+        for case in cases {
+            let selector = UpstreamSelector::new_with_global_user_agents(
+                GlobalUserAgentConfig {
+                    claude: case.global_claude.map(str::to_owned),
+                    codex: case.global_codex.map(str::to_owned),
+                },
+                -1,
+                vec![UpstreamConfig {
+                    enable: true,
+                    name: "ua-upstream".to_string(),
+                    base_url: "https://ua.example.com".to_string(),
+                    model: "ua-model".to_string(),
+                    api_keys: vec!["ua-key".to_string()],
+                    user_agent_claude: case.upstream_claude.map(str::to_owned),
+                    user_agent_codex: case.upstream_codex.map(str::to_owned),
+                    mode: case.upstream_mode.into(),
+                }],
+            )
+            .expect("测试数据已确保 upstreams 非空");
 
-        let (_, _, _, _, _, codex_user_agent, _) = selector
-            .next_by_mode(Mode::OpenAIResponses)
-            .expect("应能返回 Codex 全局专属 user_agent");
-        assert_eq!(codex_user_agent, Some("Codex-Global-UA/3.0"));
+            let (_, _, _, _, _, user_agent, mode) = selector
+                .next_by_mode(case.mode)
+                .expect("应能返回匹配 mode 的 upstream");
+
+            assert_eq!(mode, case.mode, "{}", case.name);
+            assert_eq!(user_agent, case.expected_user_agent, "{}", case.name);
+        }
     }
 
     #[test]
@@ -767,74 +726,6 @@ mod tests {
         assert_eq!(model, "chat-model");
         assert_eq!(key, "chat-key");
         assert_eq!(user_agent, Some("Codex-Chat-UA/1.0"));
-        assert_eq!(mode, Mode::OpenAIChat);
-    }
-
-    #[test]
-    fn test_next_by_mode_uses_codex_global_user_agent_for_openai_chat() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "chat-upstream".to_string(),
-            base_url: "https://chat.example.com".to_string(),
-            model: "chat-model".to_string(),
-            api_keys: vec!["chat-key".to_string()],
-            user_agent_claude: None,
-            user_agent_codex: None,
-            mode: vec![Mode::OpenAIChat].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: Some("Claude-Global-UA/2.0".to_string()),
-                codex: Some("Codex-Global-UA/3.0".to_string()),
-            },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
-
-        let (_, _, _, _, _, user_agent, mode) = selector
-            .next_by_mode(Mode::OpenAIChat)
-            .expect("应能返回 OpenAI Chat 的全局 codex user_agent");
-
-        assert_eq!(user_agent, Some("Codex-Global-UA/3.0"));
-        assert_eq!(mode, Mode::OpenAIChat);
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod openai_chat_tests {
-    use super::*;
-
-    #[test]
-    fn test_next_by_mode_returns_codex_user_agent_for_openai_chat() {
-        let upstreams = vec![UpstreamConfig {
-            enable: true,
-            name: "chat-upstream".to_string(),
-            base_url: "https://chat.example.com".to_string(),
-            model: "chat-model".to_string(),
-            api_keys: vec!["chat-key".to_string()],
-            user_agent_claude: None,
-            user_agent_codex: Some("Codex-UA/4.0".to_string()),
-            mode: vec![Mode::OpenAIChat].into(),
-        }];
-        let selector = UpstreamSelector::new_with_global_user_agents(
-            GlobalUserAgentConfig {
-                claude: None,
-                codex: Some("Codex-Global-UA/5.0".to_string()),
-            },
-            -1,
-            upstreams,
-        )
-        .expect("测试数据已确保 upstreams 非空");
-
-        let (idx, _, _, _, key, user_agent, mode) = selector
-            .next_by_mode(Mode::OpenAIChat)
-            .expect("应能选到 openai_chat upstream");
-
-        assert_eq!(idx, 0);
-        assert_eq!(key, "chat-key");
-        assert_eq!(user_agent, Some("Codex-UA/4.0"));
         assert_eq!(mode, Mode::OpenAIChat);
     }
 }

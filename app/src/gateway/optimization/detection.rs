@@ -237,32 +237,32 @@ mod tests {
     }
 
     #[test]
-    fn test_title_generation_detection() {
-        let request = json!({
-            "system": [
-                {
-                    "text": "x-anthropic-billing-header: cc_version=2.1.50.ae0; cc_entrypoint=cli; cch=00000;",
-                    "type": "text"
-                },
-                {
-                    "text": "Analyze if this message indicates a new conversation topic. If it does, extract a 2-3 word title that captures the new topic. Format your response as a JSON object with two fields: 'isNewTopic' (boolean) and 'title' (string, or null if isNewTopic is false).",
-                    "type": "text"
-                }
-            ]
-        });
-        assert!(is_title_generation_request(&request));
-    }
+    fn test_title_generation_detection_matches_supported_prompts() {
+        let cases = [
+            json!({
+                "system": [
+                    {
+                        "text": "x-anthropic-billing-header: cc_version=2.1.50.ae0; cc_entrypoint=cli; cch=00000;",
+                        "type": "text"
+                    },
+                    {
+                        "text": "Analyze if this message indicates a new conversation topic. If it does, extract a 2-3 word title that captures the new topic. Format your response as a JSON object with two fields: 'isNewTopic' (boolean) and 'title' (string, or null if isNewTopic is false).",
+                        "type": "text"
+                    }
+                ]
+            }),
+            json!({
+                "system": [
+                    {
+                        "text": "Generate a concise, sentence-case title for the latest user request.",
+                        "type": "text"
+                    }
+                ]
+            }),
+        ];
 
-    #[test]
-    fn test_title_generation_detection_with_legacy_prompt() {
-        let request = json!({
-            "system": [
-                {
-                    "text": "Generate a concise, sentence-case title for the latest user request.",
-                    "type": "text"
-                }
-            ]
-        });
-        assert!(is_title_generation_request(&request));
+        for request in cases {
+            assert!(is_title_generation_request(&request));
+        }
     }
 }
