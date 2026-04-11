@@ -84,6 +84,10 @@ async fn main() -> anyhow::Result<()> {
     info!("Server listening on {}", &listen_addr);
     let acceptor = TcpListener::new(listen_addr).bind().await;
 
+    let doc = OpenApi::new("salvo web api", "0.0.1").merge_router(&router);
+    let router = router
+        .unshift(doc.into_router("/api-doc/openapi.json"))
+        .unshift(Scalar::new("/api-doc/openapi.json").into_router("scalar"));
     Server::new(acceptor).serve(router).await;
 
     Ok(())

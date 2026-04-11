@@ -77,13 +77,13 @@ async fn dispatch_proxy(req: &mut Request, depot: &Depot, res: &mut Response) {
     }
 }
 
-#[handler]
+#[endpoint]
 pub async fn responses_alias_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     rewrite_responses_alias(req);
     dispatch_proxy(req, depot, res).await;
 }
 
-#[handler]
+#[endpoint]
 pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     dispatch_proxy(req, depot, res).await;
 }
@@ -161,10 +161,10 @@ mod tests {
 
     #[tokio::test]
     async fn route_table_only_adds_exact_responses_short_path() {
-        #[handler]
+        #[endpoint]
         async fn alias_marker() {}
 
-        #[handler]
+        #[endpoint]
         async fn v1_marker() {}
 
         let service = Service::new(
