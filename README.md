@@ -160,6 +160,7 @@ sh build_native_stable.sh r
 # 策略：上游之间轮询，API Key 之间轮询
 # 修改后即时生效
 
+[server]
 # 服务监听端口（默认 9077，修改后需重启服务）
 port = 9077
 
@@ -214,7 +215,8 @@ cargo run -p cli_req_refiner
 cargo run -p cli_req_refiner -- /path/to/config.toml
 ```
 
-服务默认监听 `0.0.0.0:9077`，可通过 `config.toml` 顶层 `port` 修改。
+服务默认监听 `0.0.0.0:9077`，可通过 `config.toml` 中的 `[server].port` 修改。
+旧版顶层 `port`、`log_req_body`、`log_res_body`、`user_agent_global_*` 仍兼容读取，推荐逐步迁移到 `[server]` 配置块。
 
 ---
 
@@ -235,14 +237,16 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 
 | 字段 | 类型 | 说明 |
 |:-----|:-----|:-----|
-| `user_agent_global_claude` | `String` | 可选，仅对 Claude 接口（`anthropic` 模式）生效的全局 `User-Agent` |
-| `user_agent_global_codex` | `String` | 可选，仅对 OpenAI 接口（`openai_responses` 与 `openai_chat` 模式）生效的全局 `User-Agent` |
+| `server.user_agent_global_claude` | `String` | 可选，仅对 Claude 接口（`anthropic` 模式）生效的全局 `User-Agent` |
+| `server.user_agent_global_codex` | `String` | 可选，仅对 OpenAI 接口（`openai_responses` 与 `openai_chat` 模式）生效的全局 `User-Agent` |
 
 ### 🌐 服务监听配置
 
 | 字段 | 类型 | 默认值 | 说明 |
 |:-----|:-----|:-------|:-----|
-| `port` | `u16` | `9077` | 服务监听端口，修改后需重启进程生效 |
+| `server.port` | `u16` | `9077` | 服务监听端口，修改后需重启进程生效 |
+| `server.log_req_body` | `bool` | `false` | 是否打印请求体 |
+| `server.log_res_body` | `bool` | `false` | 是否打印响应体 |
 
 ### ⚙️ 优化配置
 

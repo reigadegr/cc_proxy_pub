@@ -251,7 +251,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
                             &selected_upstream,
                             attempt,
                             ctx.max_attempts,
-                            ctx.cfg.log_res_body,
+                            ctx.cfg.server.log_res_body,
                             &failed_response,
                         );
                         last_failure = Some(UpstreamAttemptFailure::Response(failed_response));
@@ -305,7 +305,7 @@ fn prepare_request_body(
     if matches!(plan.kind, ProxyKind::Anthropic)
         && !current.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&current)
-        && cfg.log_req_body
+        && cfg.server.log_req_body
     {
         log_full_body(body_str);
     }
@@ -343,7 +343,7 @@ fn prepare_request_body(
     if !current.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&current)
     {
-        if cfg.log_req_body {
+        if cfg.server.log_req_body {
             log_full_body(body_str);
         }
 
@@ -495,7 +495,7 @@ async fn forward_proxy_response(
 
         copy_response_headers(res, parts.headers, false);
 
-        let log_body = cfg.log_res_body;
+        let log_body = cfg.server.log_res_body;
         tracing::info!("{}", sse_passthrough_log(kind));
 
         let stream = BodyStream::new(body)
@@ -547,7 +547,7 @@ async fn forward_proxy_response(
     let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding);
     let body_str = String::from_utf8_lossy(&body_bytes);
 
-    if cfg.log_res_body {
+    if cfg.server.log_res_body {
         if matches!(kind, ProxyKind::OpenAI) {
             tracing::info!("=== OpenAI 原始上游响应 ===");
             tracing::info!("{}", body_str);
@@ -793,7 +793,7 @@ mod tests {
     use http::uri::Scheme;
     use http_body_util::Full;
     use hyper::Request as HyperRequest;
-    use my_config::{Config, Mode, OptimizationConfig};
+    use my_config::{Config, Mode, OptimizationConfig, ServerConfig};
     use salvo::{Request, http::StatusCode};
 
     use super::{
@@ -849,11 +849,7 @@ mod tests {
 
     fn test_config() -> Config {
         Config {
-            port: 9077,
-            log_req_body: false,
-            log_res_body: false,
-            user_agent_global_claude: None,
-            user_agent_global_codex: None,
+            server: ServerConfig::default(),
             upstream: Vec::new(),
             optimizations: OptimizationConfig::default(),
         }

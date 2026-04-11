@@ -105,6 +105,7 @@ git config user.email
 代理读取 `config.toml`（或第一个命令行参数指定的路径）。示例：
 
 ```toml
+[server]
 port = 9077
 log_req_body = false
 log_res_body = false
@@ -129,7 +130,7 @@ enable_filepath_extraction_mock = true
 ```
 
 配置变更会通过 `notify` crate 自动检测并重载，无需重启服务。
-监听端口 `port` 仅在启动时读取，修改后需要重启服务。
+监听端口 `server.port` 仅在启动时读取，修改后需要重启服务。
 
 ## 请求流程
 

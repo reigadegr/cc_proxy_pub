@@ -57,12 +57,14 @@ impl AtomicConfig {
                 let old_global_user_agents = old.global_user_agent_config();
                 let new_global_user_agents = new_config.global_user_agent_config();
 
-                let port_changed = old.port != new_config.port;
+                let port_changed = old.server.port != new_config.server.port;
                 let upstream_changed = old.upstream != new_config.upstream;
                 let user_agent_global_changed = old_global_user_agents != new_global_user_agents;
                 let optimizations_changed = old.optimizations != new_config.optimizations;
-                let log_req_body_changed = old.log_req_body != new_config.log_req_body;
-                let log_res_body_changed = old.log_res_body != new_config.log_res_body;
+                let log_req_body_changed =
+                    old.server.log_req_body != new_config.server.log_req_body;
+                let log_res_body_changed =
+                    old.server.log_res_body != new_config.server.log_res_body;
                 self.inner.store(Arc::new(new_config.clone()));
 
                 if upstream_changed || user_agent_global_changed {
@@ -85,7 +87,7 @@ impl AtomicConfig {
                     if port_changed {
                         info!(
                             "listen_port: {}→{}（重启服务后生效）",
-                            old.port, new_config.port
+                            old.server.port, new_config.server.port
                         );
                     }
 
@@ -119,14 +121,14 @@ impl AtomicConfig {
                     if log_req_body_changed {
                         info!(
                             "log_req_body: {}→{}",
-                            old.log_req_body, new_config.log_req_body,
+                            old.server.log_req_body, new_config.server.log_req_body,
                         );
                     }
 
                     if log_res_body_changed {
                         info!(
                             "log_res_body: {}→{}",
-                            old.log_res_body, new_config.log_res_body,
+                            old.server.log_res_body, new_config.server.log_res_body,
                         );
                     }
                 } else {

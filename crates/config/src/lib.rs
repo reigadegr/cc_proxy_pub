@@ -10,6 +10,6 @@ pub use my_selector::{
 };
 
 pub use self::{
-    model::{Config, OptimizationConfig},
+    model::{Config, OptimizationConfig, ServerConfig},
     runtime::AtomicConfig,
 };

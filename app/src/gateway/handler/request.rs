@@ -88,7 +88,7 @@ fn write_local_optimization_response(
     }
 
     if let Ok(body_str) = std::str::from_utf8(&local_response.body)
-        && config.log_res_body
+        && config.server.log_res_body
     {
         log_full_response(body_str);
     }

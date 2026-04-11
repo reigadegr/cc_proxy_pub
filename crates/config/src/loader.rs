@@ -62,7 +62,7 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<Config, String> {
 
 pub fn log_loaded_config(config: &Config) {
     info!("✅ 配置已加载:");
-    info!("listen_port: {}", config.port);
+    info!("listen_port: {}", config.server.port);
     info!(
         "upstream 数量: {} 个（启用 {} 个）",
         config.upstream.len(),
@@ -99,6 +99,6 @@ pub fn log_loaded_config(config: &Config) {
         config.optimizations.enable_suggestion_mode_skip,
         config.optimizations.enable_filepath_extraction_mock,
     );
-    info!("log_req_body: {}", config.log_req_body);
-    info!("log_res_body: {}", config.log_res_body);
+    info!("log_req_body: {}", config.server.log_req_body);
+    info!("log_res_body: {}", config.server.log_res_body);
 }

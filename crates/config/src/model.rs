@@ -2,8 +2,21 @@ use my_selector::{GlobalUserAgentConfig, UpstreamConfig};
 use serde::{Deserialize, Serialize};
 
 /// 配置结构
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Config {
+    #[serde(default)]
+    pub server: ServerConfig,
+    /// 上游提供商配置列表（支持多个上游负载均衡）
+    #[serde(default)]
+    pub upstream: Vec<UpstreamConfig>,
+    /// 本地优化拦截开关
+    #[serde(default)]
+    pub optimizations: OptimizationConfig,
+}
+
+/// 服务运行配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerConfig {
     /// 服务监听端口
     #[serde(default = "default_port")]
     pub port: u16,
@@ -19,12 +32,18 @@ pub struct Config {
     /// 仅用于 Codex 接口（OpenAI Responses / Chat 模式）的全局 User-Agent
     #[serde(default)]
     pub user_agent_global_codex: Option<String>,
-    /// 上游提供商配置列表（支持多个上游负载均衡）
-    #[serde(default)]
-    pub upstream: Vec<UpstreamConfig>,
-    /// 本地优化拦截开关
-    #[serde(default)]
-    pub optimizations: OptimizationConfig,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            port: default_port(),
+            log_req_body: false,
+            log_res_body: false,
+            user_agent_global_claude: None,
+            user_agent_global_codex: None,
+        }
+    }
 }
 
 /// 本地优化配置
@@ -61,9 +80,74 @@ impl Config {
     #[must_use]
     pub fn global_user_agent_config(&self) -> GlobalUserAgentConfig {
         GlobalUserAgentConfig {
-            claude: self.user_agent_global_claude.clone(),
-            codex: self.user_agent_global_codex.clone(),
+            claude: self.server.user_agent_global_claude.clone(),
+            codex: self.server.user_agent_global_codex.clone(),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct PartialConfig {
+    #[serde(default)]
+    server: PartialServerConfig,
+    #[serde(default, flatten)]
+    legacy_server: PartialServerConfig,
+    #[serde(default)]
+    upstream: Vec<UpstreamConfig>,
+    #[serde(default)]
+    optimizations: OptimizationConfig,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct PartialServerConfig {
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    log_req_body: Option<bool>,
+    #[serde(default)]
+    log_res_body: Option<bool>,
+    #[serde(default)]
+    user_agent_global_claude: Option<String>,
+    #[serde(default)]
+    user_agent_global_codex: Option<String>,
+}
+
+impl PartialServerConfig {
+    fn merge(self, legacy: Self) -> ServerConfig {
+        let defaults = ServerConfig::default();
+
+        ServerConfig {
+            port: self.port.or(legacy.port).unwrap_or(defaults.port),
+            log_req_body: self
+                .log_req_body
+                .or(legacy.log_req_body)
+                .unwrap_or(defaults.log_req_body),
+            log_res_body: self
+                .log_res_body
+                .or(legacy.log_res_body)
+                .unwrap_or(defaults.log_res_body),
+            user_agent_global_claude: self
+                .user_agent_global_claude
+                .or(legacy.user_agent_global_claude),
+            user_agent_global_codex: self
+                .user_agent_global_codex
+                .or(legacy.user_agent_global_codex),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let partial = PartialConfig::deserialize(deserializer)?;
+
+        Ok(Self {
+            server: partial.server.merge(partial.legacy_server),
+            upstream: partial.upstream,
+            optimizations: partial.optimizations,
+        })
     }
 }
 
@@ -82,7 +166,7 @@ pub const fn default_port() -> u16 {
 mod tests {
     use my_selector::{GlobalUserAgentConfig, Mode, UpstreamModes};
 
-    use super::{Config, default_port};
+    use super::{Config, ServerConfig, default_port};
 
     #[test]
     fn upstream_enable_defaults_to_true() {
@@ -220,6 +304,7 @@ mod tests {
     fn mode_specific_global_user_agents_deserialize_when_present() {
         let config: Config = toml::from_str(
             r#"
+                [server]
                 user_agent_global_claude = "Claude-Global/9.9.9"
                 user_agent_global_codex = "Codex-Global/9.9.9"
 
@@ -232,11 +317,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            config.user_agent_global_claude.as_deref(),
+            config.server.user_agent_global_claude.as_deref(),
             Some("Claude-Global/9.9.9")
         );
         assert_eq!(
-            config.user_agent_global_codex.as_deref(),
+            config.server.user_agent_global_codex.as_deref(),
             Some("Codex-Global/9.9.9")
         );
     }
@@ -318,13 +403,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(config.port, default_port());
+        assert_eq!(config.server.port, default_port());
     }
 
     #[test]
     fn openai_chat_reuses_codex_user_agent_configuration() {
         let config: Config = toml::from_str(
             r#"
+                [server]
                 user_agent_global_codex = "Codex-Global/9.9.9"
 
                 [[upstream]]
@@ -352,6 +438,7 @@ mod tests {
     fn port_can_be_overridden() {
         let config: Config = toml::from_str(
             r#"
+                [server]
                 port = 19077
 
                 [[upstream]]
@@ -362,6 +449,59 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(config.port, 19077);
+        assert_eq!(config.server.port, 19077);
+    }
+
+    #[test]
+    fn legacy_top_level_server_fields_still_deserialize() {
+        let config: Config = toml::from_str(
+            r#"
+                port = 19077
+                log_req_body = true
+                log_res_body = true
+                user_agent_global_claude = "Claude-Global/9.9.9"
+                user_agent_global_codex = "Codex-Global/9.9.9"
+
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.server,
+            ServerConfig {
+                port: 19077,
+                log_req_body: true,
+                log_res_body: true,
+                user_agent_global_claude: Some("Claude-Global/9.9.9".to_string()),
+                user_agent_global_codex: Some("Codex-Global/9.9.9".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn nested_server_fields_override_legacy_top_level_values() {
+        let config: Config = toml::from_str(
+            r#"
+                port = 19077
+                log_req_body = false
+
+                [server]
+                port = 29077
+                log_req_body = true
+
+                [[upstream]]
+                base_url = "https://example.com"
+                model = "test-model"
+                api_keys = ["test-key"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.server.port, 29077);
+        assert!(config.server.log_req_body);
     }
 }

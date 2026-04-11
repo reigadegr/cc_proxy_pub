@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     // 初始化配置
     let atomic_config = Arc::new(AtomicConfig::init());
     let cfg = atomic_config.get();
-    let listen_addr = format!("0.0.0.0:{}", cfg.port);
+    let listen_addr = format!("0.0.0.0:{}", cfg.server.port);
     info!(
         "Initial config: {} upstream(s), {} enabled",
         cfg.upstream.len(),
