@@ -136,9 +136,8 @@ pub fn format_forced_upstream_target(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Mode, UpstreamModes};
-
     use super::*;
+    use crate::{Mode, UpstreamModes};
 
     #[test]
     fn format_forced_upstream_target_returns_target_details() {
