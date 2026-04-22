@@ -1,10 +1,9 @@
-pub mod content_filter;
-pub mod content_tag;
-pub mod request;
-pub mod response;
-pub mod system_prompt;
-pub mod thinking_patch;
-pub mod tool_desc;
+// Re-export my_handler crate modules used by proxy.rs
+pub use my_handler::request;
+pub use my_handler::response;
+pub use my_handler::system_prompt;
+pub use my_handler::thinking_patch;
+
 pub mod utils;
 
 use my_config::Mode;

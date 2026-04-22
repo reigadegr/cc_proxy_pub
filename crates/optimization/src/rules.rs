@@ -1,7 +1,7 @@
 use my_config::OptimizationConfig;
 use serde_json::Value;
 
-use super::detection;
+use crate::detection;
 
 pub enum OptimizationRuleMatch {
     CountTokensUrl,

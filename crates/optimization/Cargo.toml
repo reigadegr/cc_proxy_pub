@@ -1,0 +1,12 @@
+[package]
+name = "my_optimization"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+my_config.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

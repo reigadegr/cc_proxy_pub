@@ -1,5 +1,11 @@
 [workspace]
-members = ["app", "crates/config", "crates/selector"]
+members = [
+  "app",
+  "crates/config",
+  "crates/selector",
+  "crates/optimization",
+  "crates/handler",
+]
 default-members = ["app"]
 resolver = "3"
 
@@ -10,6 +16,8 @@ edition = "2024"
 [workspace.dependencies]
 my_config = { path = "crates/config" }
 my_selector = { path = "crates/selector" }
+my_optimization = { path = "crates/optimization" }
+my_handler = { path = "crates/handler" }
 anyhow = "1.0.102"
 arc-swap = "1.9.1"
 bytes = "1.11.1"

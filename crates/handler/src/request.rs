@@ -10,18 +10,24 @@ use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
 
-use crate::gateway::{
-    handler::{
-        content_filter::filter_content_strings_in_json,
-        content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
-        system_prompt::filter_system_prompts_in_json,
-        tool_desc::prune_tools_by_description_in_json,
-    },
-    optimization::{
-        OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
-    },
-    service::log_full_response,
+use crate::{
+    content_filter::filter_content_strings_in_json,
+    content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
+    system_prompt::filter_system_prompts_in_json,
+    tool_desc::prune_tools_by_description_in_json,
 };
+
+use my_optimization::{
+    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
+};
+
+/// 辅助函数：分段打印响应体
+fn log_full_response(body: &str) {
+    let len = body.len();
+    info!("=== 响应体 (共 {} 字节) ===", len);
+    info!("{}", body);
+    info!("=== 响应体结束 ===");
+}
 
 pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体
