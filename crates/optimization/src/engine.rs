@@ -7,6 +7,7 @@ use crate::{
 };
 
 #[cfg(test)]
+#[must_use]
 pub fn try_local_optimization(
     body_bytes: &[u8],
     request_url: &str,

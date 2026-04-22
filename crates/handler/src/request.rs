@@ -6,6 +6,9 @@ use http::HeaderMap;
 use http_body_util::BodyExt;
 use hyper::header::{HeaderName, HeaderValue};
 use my_config::Config;
+use my_optimization::{
+    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
+};
 use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
@@ -15,10 +18,6 @@ use crate::{
     content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
     system_prompt::filter_system_prompts_in_json,
     tool_desc::prune_tools_by_description_in_json,
-};
-
-use my_optimization::{
-    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
 };
 
 /// 辅助函数：分段打印响应体

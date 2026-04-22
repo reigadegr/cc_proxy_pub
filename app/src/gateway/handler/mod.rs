@@ -1,8 +1,5 @@
 // Re-export my_handler crate modules used by proxy.rs
-pub use my_handler::request;
-pub use my_handler::response;
-pub use my_handler::system_prompt;
-pub use my_handler::thinking_patch;
+pub use my_handler::{request, response, system_prompt, thinking_patch};
 
 pub mod utils;
 
