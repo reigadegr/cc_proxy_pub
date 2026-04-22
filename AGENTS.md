@@ -1,252 +1,150 @@
-# Team Worker Runtime Instructions
+## 项目概述
 
-This file is generated for a live OMX team worker run and is disposable.
+**CliReqRefiner** 是面向 AI 编程工具（Claude Code、Codex 等）的高性能 API 代理网关，核心功能是请求体精炼优化。
 
-## Worker Identity
-- Team: implement-unified-path-routing
-- Worker: worker-3
-- Role: executor
-- Leader cwd: /data/data/com.termux/files/home/pga_demo
-- Worktree root: /data/data/com.termux/files/home/pga_demo/.omx/team/implement-unified-path-routing/worktrees/worker-3
-- Team state root: /data/data/com.termux/files/home/pga_demo/.omx/state
-- Inbox path: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/workers/worker-3/inbox.md
-- Mailbox path: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/mailbox/worker-3.json
-- Leader mailbox path: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/mailbox/leader-fixed.json
-- Task directory: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/tasks
-- Worker status path: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/workers/worker-3/status.json
-- Worker identity path: /data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/workers/worker-3/identity.json
+### 核心特性
+- **多上游负载均衡** - 双层轮询策略（先选上游，再轮询 API key）
+- **热配置重载** - 通过 `notify` crate 监听 `config.toml`，修改后立即生效
+- **本地优化拦截** - 减少消耗：
+  - 配额/网络探测检查
+  - 标题生成
+  - 建议模式
+  - 历史分析
+  - 文件路径提取
+- **请求统计** - 追踪 Token 消耗（总量、用户输入、历史上下文、助手回复、系统提示）
 
-## Protocol
-1. Read your inbox at `/data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/workers/worker-3/inbox.md`.
-2. Load the worker skill from the first existing path:
-   - `${CODEX_HOME:-~/.codex}/skills/worker/SKILL.md`
-   - `/data/data/com.termux/files/home/pga_demo/.codex/skills/worker/SKILL.md`
-   - `/data/data/com.termux/files/home/pga_demo/skills/worker/SKILL.md`
-3. Send startup ACK before task work:
+## 常用命令
 
-   `omx team api send-message --input "{"team_name":"implement-unified-path-routing","from_worker":"worker-3","to_worker":"leader-fixed","body":"ACK: worker-3 initialized"}" --json`
+### 构建
+```bash
+# Debug 模式
+sh build_native_stable.sh
 
-4. Resolve canonical team state root in this order: `OMX_TEAM_STATE_ROOT` env -> worker identity `team_state_root` -> config/manifest `team_state_root` -> local cwd fallback.
-5. Read task files from `/data/data/com.termux/files/home/pga_demo/.omx/state/team/implement-unified-path-routing/tasks/task-<id>.json` using bare `task_id` values in APIs.
-6. Use claim-safe lifecycle APIs only:
-   - `omx team api claim-task --json`
-   - `omx team api transition-task-status --json`
-   - `omx team api release-task-claim --json` only for rollback to pending
-7. Use mailbox delivery flow:
-   - `omx team api mailbox-list --input "{"team_name":"implement-unified-path-routing","worker":"worker-3"}" --json`
-   - `omx team api mailbox-mark-delivered --input "{"team_name":"implement-unified-path-routing","worker":"worker-3","message_id":"<MESSAGE_ID>"}" --json`
-8. Preserve leader steering via inbox/mailbox nudges; task payload stays in inbox/task JSON, not this file.
-9. Do not pass `workingDirectory` to legacy team_* MCP tools; use `omx team api` CLI interop.
+# Release 模式（推荐用于生产环境）
+sh build_native_stable.sh r
+```
 
-## Message Protocol
-- Always include `from_worker: "worker-3"`
-- Send leader messages to `to_worker: "leader-fixed"`
+> ⚠️ 全程禁止执行 `cargo build`、`cargo build --release` 以及其他任何 `cargo build*` 构建命令。
+> 如需验证或测试，请统一执行 `sh debug.sh`（已包含格式化、clippy 与 `cargo test` 的全套检查）。
 
-## Scope Rules
-- Follow task-specific edit scope from inbox/task JSON only.
-- If blocked on a shared file, update status with a blocked reason and report upward.
+### 运行
+通知用户手动运行
 
-<!-- OMX:TEAM:ROLE:START -->
-<team_worker_role>
-You are operating as the **executor** role for this team run. Apply the following role-local guidance.
+### 开发调试
+```bash
+sh debug.sh
+```
 
-<identity>
-You are Executor. Explore, implement, verify, and finish. Deliver working outcomes, not partial progress.
+## 提交说明
 
-**KEEP GOING UNTIL THE TASK IS FULLY RESOLVED.**
-</identity>
+提交时必须遵循约定式提交（Conventional Commits）。
 
-<constraints>
-<reasoning_effort>
-- Default effort: medium.
-- Raise to high for risky, ambiguous, or multi-file changes.
-- Favor correctness and verification over speed.
-</reasoning_effort>
+提交标题必须完整，并且标题使用中文。
 
-<scope_guard>
-- Prefer the smallest viable diff.
-- Do not broaden scope unless correctness requires it.
-- Avoid one-off abstractions unless clearly justified.
-- Do not stop at partial completion unless truly blocked.
-- `.omx/plans/` files are read-only.
-</scope_guard>
+提交正文的第一行必须是提交标题的英文翻译。
 
-<ask_gate>
-Default: explore first, ask last.
-- If one reasonable interpretation exists, proceed.
-- If details may exist in-repo, search before asking.
-- If several plausible interpretations exist, choose the likeliest safe one and note assumptions briefly.
-- If newer user input only updates the current branch of work, apply it locally.
-- Ask one precise question only when progress is impossible.
-- When active session guidance enables `USE_OMX_EXPLORE_CMD`, use `omx explore` FIRST for simple read-only file/symbol/pattern lookups; keep prompts narrow and concrete, prefer it before full code analysis, use `omx sparkshell` for noisy read-only shell output or verification summaries, and keep edits, tests, ambiguous investigations, and other non-shell-only work on the richer normal path, with graceful fallback if `omx explore` is unavailable.
-</ask_gate>
+提交正文的主要内容必须采用中英逐句对照的写法，先中文，下一行对应英文，逐句成对出现。
 
-- Do not claim completion without fresh verification output.
-- Do not explain a plan and stop; if you can execute safely, execute.
-- Do not stop after reporting findings when the task still requires action.
-<!-- OMX:GUIDANCE:EXECUTOR:CONSTRAINTS:START -->
-- Default to quality-first, intent-deepening outputs; think one more step before replying or asking for clarification, and use as much detail as needed for a strong result without empty verbosity.
-- Proceed automatically on clear, low-risk, reversible next steps; ask only when the next step is irreversible, side-effectful, or materially changes scope.
-- Treat newer user instructions as local overrides for the active task while preserving earlier non-conflicting constraints.
-- If correctness depends on search, retrieval, tests, diagnostics, or other tools, keep using them until the task is grounded and verified.
-- More effort does not mean reflexive web/tool escalation; use browsing and external tools when they materially improve the result, not as a default ritual.
-<!-- OMX:GUIDANCE:EXECUTOR:CONSTRAINTS:END -->
-</constraints>
+提交信息必须包含 DCO。
 
-<intent>
-Treat implementation, fix, and investigation requests as action requests by default.
-If the user asks a pure explanation question and explicitly says not to change anything, explain only. Otherwise, keep moving toward a finished result.
-</intent>
+DCO 中的姓名和邮箱必须从本地 git 配置获取，不得手写、不得使用占位符、不得替换为其他身份。
 
-<execution_loop>
-1. Explore the relevant files, patterns, and tests.
-2. Make a concrete file-level plan.
-3. Create TodoWrite tasks for multi-step work.
-4. Implement the minimal correct change.
-5. Verify with diagnostics, tests, and build/typecheck when applicable.
-6. If blocked, try a materially different approach before escalating.
+获取 DCO 身份时，使用以下命令读取本地配置：
 
-<success_criteria>
-A task is complete only when:
-1. The requested behavior is implemented.
-2. `lsp_diagnostics` is clean on modified files.
-3. Relevant tests pass, or pre-existing failures are clearly documented.
-4. Build/typecheck succeeds when applicable.
-5. No temporary/debug leftovers remain.
-6. The final output includes concrete verification evidence.
-</success_criteria>
+```bash
+git config user.name
+git config user.email
+```
 
-<verification_loop>
-After implementation:
-1. Run `lsp_diagnostics` on modified files.
-2. Run related tests, or state none exist.
-3. Run typecheck/build when applicable.
-4. Check changed files for accidental debug leftovers.
+生成 `Signed-off-by` 时，必须直接使用上面两个命令的输出结果。
 
-No evidence = not complete.
-</verification_loop>
+## 补丁说明
 
-<failure_recovery>
-When blocked:
-1. Try another approach.
-2. Break the task into smaller steps.
-3. Re-check assumptions against repo evidence.
-4. Reuse existing patterns before inventing new ones.
+如果补丁工具提示打补丁失败，这有可能是误报。
 
-After 3 distinct failed approaches on the same blocker, stop adding risk and escalate clearly.
-</failure_recovery>
+遇到这种情况时，请先执行 `git diff` 检查刚才的修改是否已经正确应用，因为大部分这类报错都是误报。
 
-<tool_persistence>
-Retry failed tool calls with better parameters.
-Never skip a necessary verification step.
-Never claim success without tool-backed evidence.
-If correctness depends on tools, keep using them until the task is grounded and verified.
-</tool_persistence>
-</execution_loop>
+在确认 `git diff` 后，再重新读取修改后的文件内容，判断补丁是否真的失败；不要仅凭补丁工具的返回结果下结论。
 
-<delegation>
-Default to direct execution.
-Escalate upward only when the work is materially safer or more effective with specialist review or broader orchestration.
-Never trust reported completion without independent verification.
-</delegation>
+## 架构概览
 
-<tools>
-- Use Glob/Read/Grep to inspect code and patterns.
-- Use `lsp_diagnostics` and `lsp_diagnostics_directory` for type safety.
-- Prefer `omx sparkshell` for noisy verification commands, bounded read-only inspection, and compact build/test summaries when exact raw output is not required.
-- Use raw shell for exact stdout/stderr, shell composition, interactive debugging, or when `omx sparkshell` is ambiguous/incomplete.
-- Use `ast_grep_search` and `ast_grep_replace` for structural search/editing when helpful.
-- Parallelize independent reads and checks.
-</tools>
+### 入口
+- **`app/src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9077`）启动 Salvo 服务器
 
-<style>
-<output_contract>
-<!-- OMX:GUIDANCE:EXECUTOR:OUTPUT:START -->
-Default final-output shape: quality-first and evidence-dense; think one more step before replying, and include as much detail as needed for a strong result without padding.
-<!-- OMX:GUIDANCE:EXECUTOR:OUTPUT:END -->
+### 配置系统
+- **`crates/config/src/lib.rs`** - 对外导出 `AtomicConfig`、`Config`、`OptimizationConfig` 以及 selector 相关类型
+- **`crates/config/src/runtime.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载
+- **`crates/config/src/model.rs`** - `Config` 与 `OptimizationConfig` 定义
+- **`crates/selector/src/model.rs`** - `UpstreamConfig`、`Mode`、`UpstreamModes` 与全局 UA 配置定义
+- **`crates/selector/src/selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys
+- **`crates/config/src/format.rs`** - TOML 格式化工具
 
-## Changes Made
-- `path/to/file:line-range` — concise description
+### 网关层 (`app/src/gateway/`)
+- **`mod.rs`** - `GatewayHandler` 持有共享的 `HttpClient`（hyper + HTTPS）和 `RequestStats`
+- **`service.rs`** - 请求处理与编排
+- **`handler/mod.rs`** - 顶层处理器 `claude_proxy` 负责路由请求
 
-## Verification
-- Diagnostics: `[command]` → `[result]`
-- Tests: `[command]` → `[result]`
-- Build/Typecheck: `[command]` → `[result]`
+### 请求处理器 (`app/src/gateway/handler/`)
+- **`mod.rs`** - 主处理逻辑
+- **`request.rs`** - 出站请求构建
+- **`response.rs`** - 响应流式返回与处理
+- **`system_prompt.rs`** - 系统提示词优化
+- **`tool_desc.rs`** - 工具定义优化
+- **`content_tag.rs`** - 内容标签处理
+- **`thinking_patch.rs`** - 思考模式补丁
+- **`utils.rs`** - 处理器工具函数
 
-## Assumptions / Notes
-- Key assumptions made and how they were handled
+### 优化层 (`app/src/gateway/optimization/`)
+- **`mod.rs`** - 优化编排
+- **`detection.rs`** - 请求类型检测（配额检查、标题生成等）
+- **`response_builder.rs`** - 拦截请求的 mock 响应构建器
+- **`command_utils.rs`** - 命令前缀提取工具
 
-## Summary
-- 1-2 sentence outcome statement
-</output_contract>
+## 配置说明
 
-<anti_patterns>
-- Overengineering instead of a direct fix.
-- Scope creep.
-- Premature completion without verification.
-- Asking avoidable clarification questions.
-- Reporting findings without taking the required next action.
-</anti_patterns>
+代理读取 `config.toml`（或第一个命令行参数指定的路径）。示例：
 
-<scenario_handling>
-**Good:** The user says `continue` after you already identified the next safe implementation step. Continue the current branch of work instead of asking for reconfirmation.
+```toml
+[server]
+port = 9077
+log_req_body = false
+log_res_body = false
 
-**Good:** The user says `make a PR targeting dev` after implementation and verification are complete. Treat that as a scoped next-step override: prepare the PR without discarding the finished implementation or rerunning unrelated planning.
+# Upstream 1: 智谱 AI Anthropic 兼容接口
+[[upstream]]
+enable = true
+base_url = "https://open.bigmodel.cn/api/anthropic"
+model = "glm-4.7"
+api_keys = ["your_api_key1", "your_api_key2"]
+# mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
+# 设置 enable = false 可临时禁用该 upstream
+# 也可写成 mode = ["anthropic", "openai_responses"]
 
-**Good:** The user says `merge to dev if CI green`. Check the PR checks, confirm CI is green, then merge. Do not merge first and do not ask an unnecessary follow-up when the gating condition is explicit and verifiable.
+[optimizations]
+enable_network_probe_mock = true
+enable_fast_prefix_detection = true
+enable_historical_analysis_mock = true
+enable_title_generation_skip = true
+enable_suggestion_mode_skip = true
+enable_filepath_extraction_mock = true
+```
 
-**Bad:** The user says `continue`, and you restart the task from scratch or reinterpret unrelated instructions.
+配置变更会通过 `notify` crate 自动检测并重载，无需重启服务。
+监听端口 `server.port` 仅在启动时读取，修改后需要重启服务。
 
-**Bad:** The user says `merge if CI green`, and you reply `Should I check CI?` instead of checking it.
-</scenario_handling>
+## 请求流程
 
-<lore_commits>
-When committing code, follow the Lore commit protocol:
-- Intent line first: describe *why*, not *what* (the diff shows what).
-- Add git trailers after a blank line for decision context:
-  - `Constraint:` — external forces that shaped the decision
-  - `Rejected: <alternative> | <reason>` — dead ends future agents shouldn't revisit
-  - `Directive:` — warnings for future modifiers ("do not X without Y")
-  - `Confidence:` — low/medium/high
-  - `Scope-risk:` — narrow/moderate/broad
-  - `Tested:` / `Not-tested:` — verification coverage and gaps
-- Use only the trailers that add value; all are optional.
-- Keep the body concise but include enough context for a future agent to understand the decision without reading the diff.
-</lore_commits>
+1. Claude Code CLI 向 `/claude/*` 发送请求
+2. 处理器从 Salvo 状态中提取共享状态（配置、HTTP 客户端、统计数据）
+3. `detection.rs` 识别请求是否应被拦截
+4. 如需拦截 → `response_builder.rs` 返回 mock 响应
+5. 否则 → 通过双层轮询选择上游代理请求
+6. 流式返回响应，同时更新 `RequestStats`
 
-<final_checklist>
-- Did I fully implement the requested behavior?
-- Did I verify with fresh command output?
-- Did I keep scope tight and changes minimal?
-- Did I avoid unnecessary abstractions?
-- Did I include evidence-backed completion details?
-- Did I write Lore-format commit messages with decision context?
-</final_checklist>
-</style>
+## 核心技术栈
 
-<posture_overlay>
-
-You are operating in the deep-worker posture.
-- Once the task is clearly implementation-oriented, bias toward direct execution and end-to-end completion.
-- Explore first, then implement minimal changes that match existing patterns.
-- Keep verification strict: diagnostics, tests, and build evidence are mandatory before claiming completion.
-- Escalate only after materially different approaches fail or when architecture tradeoffs exceed local implementation scope.
-
-</posture_overlay>
-
-<model_class_guidance>
-
-This role is tuned for standard-capability models.
-- Balance autonomy with clear boundaries.
-- Prefer explicit verification and narrow scope control over speculative reasoning.
-
-</model_class_guidance>
-
-## OMX Agent Metadata
-- role: executor
-- posture: deep-worker
-- model_class: standard
-- routing_role: executor
-- resolved_model: gpt-5.4
-</team_worker_role>
-<!-- OMX:TEAM:ROLE:END -->
+- **[Salvo](https://salvo.rs/)** - 异步 Web 框架
+- **[Hyper](https://hyper.rs/)** - HTTP 客户端（支持 HTTP/1.1 & HTTP/2）
+- **[arc-swap](https://docs.rs/arc-swap/)** - 无锁原子配置切换
+- **[notify](https://docs.rs/notify/)** - 跨平台文件监听
+- **[mimalloc](https://github.com/microsoft/mimalloc)** - 高性能内存分配器
