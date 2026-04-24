@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use my_config::{AtomicConfig, Mode, UpstreamSelector};
+use my_handler::request::{get_req_body, log_request_meta, make_proxy_url, override_model_in_body};
 use salvo::prelude::*;
 
-use my_handler::request::{get_req_body, log_request_meta, make_proxy_url, override_model_in_body};
-
-use super::request::prepare_request_body;
-use super::response::{forward_proxy_response, render_failed_upstream_response};
-use super::service::RequestStats;
-use super::types::{
-    FailedUpstreamResponse, HttpClient, ProxyKind, ProxyPlan, RetryContext, RetryLoopResult,
-    SelectedUpstream, UpstreamAttemptFailure,
+use super::{
+    request::prepare_request_body,
+    response::{forward_proxy_response, render_failed_upstream_response},
+    service::RequestStats,
+    types::{
+        FailedUpstreamResponse, HttpClient, ProxyKind, ProxyPlan, RetryContext, RetryLoopResult,
+        SelectedUpstream, UpstreamAttemptFailure,
+    },
 };
 
 pub const fn proxy_plan_for_mode(mode: Mode) -> ProxyPlan {

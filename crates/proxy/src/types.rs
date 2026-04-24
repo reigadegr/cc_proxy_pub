@@ -1,14 +1,13 @@
+use std::sync::Arc;
+
 use bytes::Bytes;
+use http::{HeaderName, HeaderValue};
 use http_body_util::Full;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
     rt::TokioExecutor,
 };
-
-use std::sync::Arc;
-
-use http::{HeaderName, HeaderValue};
 use my_config::{Config, Mode, UpstreamSelector};
 use salvo::prelude::*;
 

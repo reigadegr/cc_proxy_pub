@@ -141,22 +141,6 @@ fn analyze_request_json(json: &Value) -> (u64, u64, u64, u64, u64) {
     )
 }
 
-// 辅助函数：分段打印大字符串，避免日志截断和字符边界 panic
-pub fn log_full_body(body: &str) {
-    let len = body.len();
-    info!("=== 请求体 (共 {} 字节) ===", len);
-    info!("\n{}", body);
-    info!("=== 请求体结束 ===");
-}
-
-// 辅助函数：分段打印响应体
-pub fn log_full_response(body: &str) {
-    let len = body.len();
-    info!("=== 响应体 (共 {} 字节) ===", len);
-    info!("{}", body);
-    info!("=== 响应体结束 ===");
-}
-
 pub fn calculate_tokens(stats: &RequestStats, body_str: &str) {
     let (total, user_new, user_hist, assistant, system) = analyze_request_body(body_str);
     update_token_stats(stats, total, user_new, user_hist, assistant, system);

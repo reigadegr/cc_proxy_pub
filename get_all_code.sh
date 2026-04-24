@@ -1,7 +1,7 @@
 if [ ! -d target ]; then
     mkdir target
     uid=$(dumpsys package com.termux | grep appId | awk 'NR==1{print $1}' | cut -d '=' -f2)
-    chown -R $uid:$uid ./tatget
+    chown -R $uid:$uid ./target
     chmod -R 0755 ./target
 fi
 name=$(basename $(dirname "$0"))

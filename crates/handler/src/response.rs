@@ -2,6 +2,7 @@ use std::io::Read;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
+use tracing::info;
 
 /// 尝试解压 gzip 编码的响应体
 ///
@@ -32,4 +33,20 @@ pub fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&s
             body_bytes.clone()
         }
     }
+}
+
+/// 打印请求体
+pub fn log_full_body(body: &str) {
+    let len = body.len();
+    info!("=== 请求体 (共 {} 字节) ===", len);
+    info!("\n{}", body);
+    info!("=== 请求体结束 ===");
+}
+
+/// 打印响应体
+pub fn log_full_response(body: &str) {
+    let len = body.len();
+    info!("=== 响应体 (共 {} 字节) ===", len);
+    info!("{}", body);
+    info!("=== 响应体结束 ===");
 }

@@ -91,7 +91,7 @@ const SYSTEM_PROMPT_FILTER_MARKERS: &[&str] = &[
 ///
 /// Claude CLI 发送的请求中，system 数组包含很长的提示词文本，
 /// 这些文本会占用大量 tokens。此函数移除包含任意标记文本的元素。
-pub fn remove_builtin_system_prompts_in_json(json: &mut Value) -> bool {
+pub fn filter_system_prompts_in_json(json: &mut Value) -> bool {
     let Some(system) = get_system_array_mut(json) else {
         return false;
     };
@@ -123,10 +123,6 @@ pub fn remove_builtin_system_prompts_in_json(json: &mut Value) -> bool {
     changed
 }
 
-pub fn filter_system_prompts_in_json(json: &mut Value) -> bool {
-    remove_builtin_system_prompts_in_json(json)
-}
-
 /// 插入自定义系统提示词到 system 数组
 ///
 /// 将自定义提示词插入到请求体的 system 数组开头，确保自定义提示优先被模型处理。
@@ -134,7 +130,7 @@ pub fn filter_system_prompts_in_json(json: &mut Value) -> bool {
 ///
 /// 此函数还会从原始 system 数组中提取 <env>...</env> 标签内的环境信息，
 /// 并追加到自定义提示词的末尾。
-pub fn prepend_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &str) -> bool {
+pub fn insert_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &str) -> bool {
     // 从原始 system 数组中提取环境信息
     let (env_info, has_env) =
         extract_env_info(json).map_or((None, false), |info| (Some(info), true));
@@ -160,10 +156,6 @@ pub fn prepend_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &st
     );
 
     true
-}
-
-pub fn insert_custom_system_prompt_in_json(json: &mut Value, custom_prompt: &str) -> bool {
-    prepend_custom_system_prompt_in_json(json, custom_prompt)
 }
 
 fn get_system_array_mut(json: &mut Value) -> Option<&mut Vec<Value>> {

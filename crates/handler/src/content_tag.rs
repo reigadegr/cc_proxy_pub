@@ -33,7 +33,7 @@ fn should_remove_content(text: &str) -> bool {
 /// - <local-command-caveat>...</local-command-caveat>
 ///
 /// 这些内容占用大量 tokens 但对模型无用，此函数将其移除。
-pub fn strip_messages_content_tags_in_json(json: &mut Value) -> bool {
+pub fn filter_messages_content_in_json(json: &mut Value) -> bool {
     let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
         return false;
     };
@@ -88,15 +88,11 @@ pub fn strip_messages_content_tags_in_json(json: &mut Value) -> bool {
     false
 }
 
-pub fn filter_messages_content_in_json(json: &mut Value) -> bool {
-    strip_messages_content_tags_in_json(json)
-}
-
 /// 覆盖特定错误的 `is_error` 字段
 ///
 /// 当 role 为 "user" 的消息中，content 数组包含特定权限错误时，
 /// 强制将 `is_error` 改为 false，避免触发不必要的错误处理。
-pub fn clear_permission_denied_is_error_in_json(json: &mut Value) -> bool {
+pub fn override_permission_error_in_json(json: &mut Value) -> bool {
     let Some(messages) = json.get_mut("messages").and_then(Value::as_array_mut) else {
         return false;
     };
@@ -144,8 +140,4 @@ pub fn clear_permission_denied_is_error_in_json(json: &mut Value) -> bool {
     }
 
     false
-}
-
-pub fn override_permission_error_in_json(json: &mut Value) -> bool {
-    clear_permission_denied_is_error_in_json(json)
 }

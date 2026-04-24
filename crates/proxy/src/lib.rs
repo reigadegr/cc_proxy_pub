@@ -5,7 +5,5 @@ mod service;
 mod types;
 
 pub use entry::{handle_anthropic, handle_openai};
-pub use service::{
-    RequestStats, calculate_tokens, calculate_tokens_from_json, log_full_body, log_full_response,
-};
+pub use service::{RequestStats, calculate_tokens, calculate_tokens_from_json};
 pub use types::{HttpClient, create_http_client};

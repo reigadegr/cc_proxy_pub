@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use my_config::AtomicConfig;
-use salvo::prelude::*;
-
 use my_proxy::{HttpClient, RequestStats};
+use salvo::prelude::*;
 
 pub fn setup_handler_state(
     depot: &Depot,

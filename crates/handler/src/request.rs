@@ -16,17 +16,10 @@ use tracing::info;
 use crate::{
     content_filter::filter_content_strings_in_json,
     content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
+    response::log_full_response,
     system_prompt::filter_system_prompts_in_json,
     tool_desc::prune_tools_by_description_in_json,
 };
-
-/// 辅助函数：分段打印响应体
-fn log_full_response(body: &str) {
-    let len = body.len();
-    info!("=== 响应体 (共 {} 字节) ===", len);
-    info!("{}", body);
-    info!("=== 响应体结束 ===");
-}
 
 pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体

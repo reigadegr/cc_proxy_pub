@@ -60,7 +60,7 @@ fn patch_message_reasoning_content(message: &mut Value, fallback_thinking: Optio
 /// - 优先从 message.content[type=thinking].thinking 提取文本
 /// - 给 `assistant` 消息补上/替换 `reasoning_content`（缺失或为占位符时）
 /// - 给 `messages` 最后一个元素补上/替换 `reasoning_content`（缺失或为占位符时），不区分 role
-pub fn patch_thinking_reasoning_content_in_json(json: &mut Value) -> bool {
+pub fn patch_reasoning_for_thinking_mode_in_json(json: &mut Value) -> bool {
     // 检查是否启用了 thinking 模式
     let thinking_enabled = json
         .get("thinking")
@@ -102,8 +102,4 @@ pub fn patch_thinking_reasoning_content_in_json(json: &mut Value) -> bool {
     } else {
         false
     }
-}
-
-pub fn patch_reasoning_for_thinking_mode_in_json(json: &mut Value) -> bool {
-    patch_thinking_reasoning_content_in_json(json)
 }

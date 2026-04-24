@@ -12,7 +12,7 @@ const CONTENT_STR_REMOVE: &[&str] = &[
 /// 检查每个元素的 content 字段，若包含指定字符串则将其消除。
 ///
 /// JSON 路径: `messages[].content[].content`
-pub fn sanitize_content_strings_in_json(json: &mut Value) -> bool {
+pub fn filter_content_strings_in_json(json: &mut Value) -> bool {
     if CONTENT_STR_REMOVE.is_empty() {
         return false;
     }
@@ -58,8 +58,4 @@ pub fn sanitize_content_strings_in_json(json: &mut Value) -> bool {
     }
 
     false
-}
-
-pub fn filter_content_strings_in_json(json: &mut Value) -> bool {
-    sanitize_content_strings_in_json(json)
 }

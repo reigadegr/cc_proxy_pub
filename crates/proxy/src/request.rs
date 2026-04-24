@@ -5,19 +5,21 @@ use http::{Error as HttpError, HeaderValue};
 use http_body_util::Full;
 use hyper::Request as HyperRequest;
 use my_config::Config;
-use salvo::prelude::*;
-
 use my_handler::{
     request::{
         filter_req_body, parse_body_json, req_local_intercept_by_url,
         req_local_intercept_from_json, serialize_body_json,
     },
+    response::log_full_body,
     system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt_in_json},
     thinking_patch::patch_reasoning_for_thinking_mode_in_json,
 };
+use salvo::prelude::*;
 
-use super::service::{RequestStats, calculate_tokens, calculate_tokens_from_json, log_full_body};
-use super::types::{ProxyKind, ProxyPlan};
+use super::{
+    service::{RequestStats, calculate_tokens, calculate_tokens_from_json},
+    types::{ProxyKind, ProxyPlan},
+};
 
 pub fn prepare_request_body(
     plan: ProxyPlan,
@@ -158,12 +160,14 @@ mod tests {
     use my_config::{Config, Mode, OptimizationConfig, ServerConfig};
     use salvo::{Request, http::StatusCode};
 
-    use super::super::{
-        entry::proxy_plan_for_mode,
-        response::should_retry_upstream_status,
-        types::{ProxyKind, ProxyPlan},
+    use super::{
+        super::{
+            entry::proxy_plan_for_mode,
+            response::should_retry_upstream_status,
+            types::{ProxyKind, ProxyPlan},
+        },
+        build_proxy_request, prepare_request_body,
     };
-    use super::{build_proxy_request, prepare_request_body};
 
     fn make_request(user_agent: &str) -> Request {
         let req_result = HyperRequest::builder()
