@@ -4,10 +4,8 @@ use arc_swap::{ArcSwap, Guard};
 use tracing::{error, info};
 
 use crate::{
-    Config, UpstreamConfig, UpstreamSelector, enabled_upstream_count,
-    loader::{
-        format_forced_upstream_target, load_from_file, load_initial_config, resolve_config_path,
-    },
+    Config, UpstreamSelector, enabled_upstream_count,
+    loader::{load_from_file, load_initial_config, resolve_config_path},
     watcher::start_config_watcher,
 };
 
@@ -56,104 +54,18 @@ impl AtomicConfig {
 
         match load_from_file(&self.config_path) {
             Ok(new_config) => {
-                let old = self.inner.load();
-                let old_global_user_agents = old.global_user_agent_config();
                 let new_global_user_agents = new_config.global_user_agent_config();
-
-                let port_changed = old.server.port != new_config.server.port;
-                let force_upstream_index_changed =
-                    old.server.force_upstream_index != new_config.server.force_upstream_index;
-                let upstream_changed = old.upstream != new_config.upstream;
-                let user_agent_global_changed = old_global_user_agents != new_global_user_agents;
-                let optimizations_changed = old.optimizations != new_config.optimizations;
-                let log_req_body_changed =
-                    old.server.log_req_body != new_config.server.log_req_body;
-                let log_res_body_changed =
-                    old.server.log_res_body != new_config.server.log_res_body;
                 self.inner.store(Arc::new(new_config.clone()));
 
-                if upstream_changed || user_agent_global_changed || force_upstream_index_changed {
-                    let new_selector = UpstreamSelector::new_with_global_user_agents(
-                        new_global_user_agents.clone(),
-                        new_config.server.force_upstream_index,
-                        new_config.upstream.clone(),
-                    )
-                    .map(Arc::new);
-                    self.upstream_selector.store(Arc::new(new_selector));
-                }
+                let new_selector = UpstreamSelector::new_with_global_user_agents(
+                    new_global_user_agents.clone(),
+                    new_config.server.force_upstream_index,
+                    new_config.upstream.clone(),
+                )
+                .map(Arc::new);
+                self.upstream_selector.store(Arc::new(new_selector));
 
-                if port_changed
-                    || upstream_changed
-                    || force_upstream_index_changed
-                    || user_agent_global_changed
-                    || optimizations_changed
-                    || log_req_body_changed
-                    || log_res_body_changed
-                {
-                    info!("✅ 配置已更新:");
-                    if port_changed {
-                        info!(
-                            "listen_port: {}→{}（重启服务后生效）",
-                            old.server.port, new_config.server.port
-                        );
-                    }
-
-                    if upstream_changed {
-                        log_upstream_change(&old.upstream, &new_config.upstream);
-                    }
-
-                    if force_upstream_index_changed {
-                        info!(
-                            "force_upstream_index: {}→{} ({})",
-                            old.server.force_upstream_index,
-                            new_config.server.force_upstream_index,
-                            format_forced_upstream_target(
-                                &new_config.upstream,
-                                new_config.server.force_upstream_index
-                            )
-                        );
-                    }
-
-                    if user_agent_global_changed {
-                        info!(
-                            "global_user_agents: {:?}→{:?}",
-                            old_global_user_agents, new_global_user_agents
-                        );
-                    }
-
-                    if optimizations_changed {
-                        info!(
-                            "optimizations: quota {}→{}, prefix {}→{}, title {}→{}, suggestion {}→{}, filepath {}→{}",
-                            old.optimizations.enable_network_probe_mock,
-                            new_config.optimizations.enable_network_probe_mock,
-                            old.optimizations.enable_fast_prefix_detection,
-                            new_config.optimizations.enable_fast_prefix_detection,
-                            old.optimizations.enable_title_generation_skip,
-                            new_config.optimizations.enable_title_generation_skip,
-                            old.optimizations.enable_suggestion_mode_skip,
-                            new_config.optimizations.enable_suggestion_mode_skip,
-                            old.optimizations.enable_filepath_extraction_mock,
-                            new_config.optimizations.enable_filepath_extraction_mock,
-                        );
-                    }
-
-                    if log_req_body_changed {
-                        info!(
-                            "log_req_body: {}→{}",
-                            old.server.log_req_body, new_config.server.log_req_body,
-                        );
-                    }
-
-                    if log_res_body_changed {
-                        info!(
-                            "log_res_body: {}→{}",
-                            old.server.log_res_body, new_config.server.log_res_body,
-                        );
-                    }
-                } else {
-                    info!("ℹ️ 配置文件内容未变化");
-                }
-
+                info!("✅ 配置已更新");
                 info!(
                     "📋 当前配置: upstream={} 个（启用 {} 个）, force_upstream_index={}, global_user_agent_configured={}",
                     new_config.upstream.len(),
@@ -175,32 +87,5 @@ impl AtomicConfig {
 
     pub(crate) fn config_path(&self) -> &Path {
         &self.config_path
-    }
-}
-
-fn log_upstream_change(old_upstream: &[UpstreamConfig], new_upstream: &[UpstreamConfig]) {
-    info!(
-        "upstream: {} 个（启用 {} 个） -> {} 个（启用 {} 个）",
-        old_upstream.len(),
-        enabled_upstream_count(old_upstream),
-        new_upstream.len(),
-        enabled_upstream_count(new_upstream)
-    );
-    for (index, upstream) in new_upstream.iter().enumerate() {
-        info!(
-            "  [{}] name={}, enable={}, base_url={}, model={}, modes={}, api_keys={} 个, user_agent_configured={}",
-            index,
-            if upstream.name.is_empty() {
-                "-"
-            } else {
-                upstream.name.as_str()
-            },
-            upstream.enable,
-            upstream.base_url,
-            upstream.model,
-            upstream.mode,
-            upstream.api_keys.len(),
-            upstream.is_any_user_agent_configured()
-        );
     }
 }
