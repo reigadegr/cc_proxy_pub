@@ -1,6 +1,7 @@
 #!/bin/sh
 
 export RUSTFLAGS="
+    --cfg tokio_unstable
     -C default-linker-libraries
     -C relro-level=full
     -C link-arg=-fuse-ld=mold

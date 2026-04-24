@@ -6,6 +6,7 @@ taplo fmt *.toml */*.toml */*/*.toml
 export RUSTFLAGS="
     -C link-arg=-fuse-ld=mold
     -C link-args=-Wl,--gc-sections,--as-needed
+    --cfg tokio_unstable
 "
 
 cargo fmt --all

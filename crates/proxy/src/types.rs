@@ -1,0 +1,81 @@
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::{
+    client::legacy::{Client, connect::HttpConnector},
+    rt::TokioExecutor,
+};
+
+use std::sync::Arc;
+
+use http::{HeaderName, HeaderValue};
+use my_config::{Config, Mode, UpstreamSelector};
+use salvo::prelude::*;
+
+/// HTTP 客户端类型别名
+pub type HttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+
+/// 创建支持 HTTP 和 HTTPS 的共享客户端
+#[must_use]
+pub fn create_http_client() -> Arc<HttpClient> {
+    // 使用 webpki-roots 内置证书，不依赖系统证书，提高跨平台稳定性
+    let https = HttpsConnectorBuilder::new()
+        .with_webpki_roots()
+        .https_or_http()
+        .enable_http1()
+        .build();
+
+    let client = Client::builder(TokioExecutor::new()).build(https);
+    Arc::new(client)
+}
+
+#[derive(Clone, Copy)]
+pub enum ProxyKind {
+    Anthropic,
+    OpenAI,
+}
+
+#[derive(Clone, Copy)]
+pub struct ProxyPlan {
+    pub(crate) kind: ProxyKind,
+    pub(crate) upstream_mode: Mode,
+    pub(crate) missing_upstream_message: &'static str,
+}
+
+pub struct SelectedUpstream {
+    pub(crate) index: usize,
+    pub(crate) name: String,
+    pub(crate) base_url: String,
+    pub(crate) model: String,
+    pub(crate) api_key: String,
+    pub(crate) user_agent: Option<String>,
+    pub(crate) mode: Mode,
+}
+
+pub struct FailedUpstreamResponse {
+    pub(crate) status: StatusCode,
+    pub(crate) headers: Vec<(Option<HeaderName>, HeaderValue)>,
+    pub(crate) body: Vec<u8>,
+    pub(crate) body_text: String,
+}
+
+pub enum UpstreamAttemptFailure {
+    Response(FailedUpstreamResponse),
+    Transport(String),
+}
+
+pub enum RetryLoopResult {
+    Forwarded,
+    Failed(UpstreamAttemptFailure),
+    NoSelection,
+}
+
+pub struct RetryContext<'a> {
+    pub(crate) req: &'a Request,
+    pub(crate) res: &'a mut Response,
+    pub(crate) client: &'a Arc<HttpClient>,
+    pub(crate) cfg: &'a Config,
+    pub(crate) selector: &'a UpstreamSelector,
+    pub(crate) body_bytes: &'a Bytes,
+    pub(crate) max_attempts: usize,
+}

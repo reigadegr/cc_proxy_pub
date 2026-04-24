@@ -1,15 +1,10 @@
-// Re-export my_handler crate modules used by proxy.rs
-pub use my_handler::{request, response, system_prompt, thinking_patch};
-
 pub mod utils;
 
 use my_config::Mode;
 use salvo::prelude::*;
 
-use crate::gateway::{
-    handler::utils::setup_handler_state,
-    proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy},
-};
+use crate::gateway::handler::utils::setup_handler_state;
+use my_proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RouteTarget {

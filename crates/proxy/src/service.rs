@@ -1,9 +1,33 @@
-use std::{borrow::Cow, sync::atomic::Ordering};
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::gateway::RequestStats;
+/// Token 统计
+pub struct RequestStats {
+    pub total_tokens: AtomicU64,
+    pub user_new_tokens: AtomicU64,
+    pub user_history_tokens: AtomicU64,
+    pub assistant_tokens: AtomicU64,
+    pub system_tokens: AtomicU64,
+    pub request_count: AtomicU64,
+}
+
+impl Default for RequestStats {
+    fn default() -> Self {
+        Self {
+            total_tokens: AtomicU64::new(0),
+            user_new_tokens: AtomicU64::new(0),
+            user_history_tokens: AtomicU64::new(0),
+            assistant_tokens: AtomicU64::new(0),
+            system_tokens: AtomicU64::new(0),
+            request_count: AtomicU64::new(0),
+        }
+    }
+}
 
 fn estimate_tokens(text: &str) -> u64 {
     // 整数运算避免浮点精度损失: (len * 2 + 6) / 7 ≈ len / 3.5
@@ -41,7 +65,7 @@ fn is_system_reminder(content: &str) -> bool {
 }
 
 // 返回: (total, user_new, user_history, assistant, system)
-pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
+fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
     if let Ok(json) = serde_json::from_str::<Value>(body) {
         return analyze_request_json(&json);
     }
@@ -51,7 +75,7 @@ pub fn analyze_request_body(body: &str) -> (u64, u64, u64, u64, u64) {
     (user_new_tokens, user_new_tokens, 0, 0, 0)
 }
 
-pub fn analyze_request_json(json: &Value) -> (u64, u64, u64, u64, u64) {
+fn analyze_request_json(json: &Value) -> (u64, u64, u64, u64, u64) {
     let mut system_tokens = 0;
     let mut user_new_tokens = 0;
     let mut user_history_tokens = 0;

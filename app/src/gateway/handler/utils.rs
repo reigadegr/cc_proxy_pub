@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use my_config::AtomicConfig;
 use salvo::prelude::*;
 
-use crate::gateway::{HttpClient, RequestStats};
+use my_proxy::{HttpClient, RequestStats};
 
 pub fn setup_handler_state(
     depot: &Depot,
