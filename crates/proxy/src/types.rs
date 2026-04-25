@@ -77,4 +77,5 @@ pub struct RetryContext<'a> {
     pub(crate) selector: &'a UpstreamSelector,
     pub(crate) body_bytes: &'a Bytes,
     pub(crate) max_attempts: usize,
+    pub(crate) force_upstream_index: isize,
 }

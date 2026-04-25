@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use my_config::{AtomicConfig, Mode, UpstreamSelector};
@@ -100,7 +101,12 @@ async fn run_proxy(
         return;
     };
 
-    let max_attempts = selector.matching_count_by_mode(plan.upstream_mode);
+    let force_index = cfg.server.force_upstream_index;
+    let max_attempts = if force_index >= 0 {
+        10
+    } else {
+        selector.matching_count_by_mode(plan.upstream_mode)
+    };
     if max_attempts == 0 {
         tracing::error!("{}", plan.missing_upstream_message);
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
@@ -117,6 +123,7 @@ async fn run_proxy(
             selector: selector.as_ref(),
             body_bytes: &body_bytes,
             max_attempts,
+            force_upstream_index: force_index,
         },
     )
     .await
@@ -153,8 +160,20 @@ async fn run_proxy(
 
 async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResult {
     let mut last_failure = None;
+    let forced = ctx.force_upstream_index >= 0;
 
     for attempt in 1..=ctx.max_attempts {
+        if forced && attempt > 1 {
+            let backoff_secs = 2 * u64::try_from(attempt).unwrap_or(10);
+            tracing::info!(
+                "{}: force_upstream_index={} 模式，第 {} 次重试，指数退避休眠 {} 秒",
+                proxy_failure_label(plan.kind),
+                ctx.force_upstream_index,
+                attempt,
+                backoff_secs
+            );
+            tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+        }
         let Some(selected_upstream) = select_upstream(ctx.selector, plan) else {
             break;
         };
@@ -192,6 +211,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
                             ctx.max_attempts,
                             ctx.cfg.server.log_res_body,
                             &failed_response,
+                            forced,
                         );
                         last_failure = Some(UpstreamAttemptFailure::Response(failed_response));
                     }
@@ -202,6 +222,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
                             attempt,
                             ctx.max_attempts,
                             &error_message,
+                            forced,
                         );
                         last_failure = Some(UpstreamAttemptFailure::Transport(error_message));
                     }
@@ -215,6 +236,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
                     attempt,
                     ctx.max_attempts,
                     &error_message,
+                    forced,
                 );
                 last_failure = Some(UpstreamAttemptFailure::Transport(error_message));
             }
@@ -290,7 +312,13 @@ fn log_failed_upstream_response(
     total_attempts: usize,
     log_response_body: bool,
     failed_response: &FailedUpstreamResponse,
+    forced: bool,
 ) {
+    let retry_hint = if forced {
+        "重试"
+    } else {
+        "重试下一个 upstream"
+    };
     if attempt < total_attempts {
         if log_response_body {
             let body = if failed_response.body_text.is_empty() {
@@ -299,7 +327,7 @@ fn log_failed_upstream_response(
                 failed_response.body_text.as_str()
             };
             tracing::warn!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, retrying next upstream; base_url={}, model={}, body={}",
+                "{}: upstream[{}] name={} attempt {}/{} returned status {}, {}; base_url={}, model={}, body={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 if upstream.name.is_empty() {
@@ -310,13 +338,14 @@ fn log_failed_upstream_response(
                 attempt,
                 total_attempts,
                 failed_response.status,
+                retry_hint,
                 upstream.base_url,
                 upstream.model,
                 body
             );
         } else {
             tracing::warn!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, retrying next upstream; base_url={}, model={}",
+                "{}: upstream[{}] name={} attempt {}/{} returned status {}, {}; base_url={}, model={}",
                 proxy_failure_label(kind),
                 upstream.index,
                 if upstream.name.is_empty() {
@@ -327,6 +356,7 @@ fn log_failed_upstream_response(
                 attempt,
                 total_attempts,
                 failed_response.status,
+                retry_hint,
                 upstream.base_url,
                 upstream.model
             );
@@ -380,10 +410,16 @@ fn log_transport_failure(
     attempt: usize,
     total_attempts: usize,
     error_message: &str,
+    forced: bool,
 ) {
+    let retry_hint = if forced {
+        "重试"
+    } else {
+        "重试下一个 upstream"
+    };
     if attempt < total_attempts {
         tracing::warn!(
-            "{}: upstream[{}] name={} attempt {}/{} transport error, retrying next upstream; base_url={}, model={}, error={}",
+            "{}: upstream[{}] name={} attempt {}/{} transport error, {}; base_url={}, model={}, error={}",
             proxy_failure_label(kind),
             upstream.index,
             if upstream.name.is_empty() {
@@ -393,6 +429,7 @@ fn log_transport_failure(
             },
             attempt,
             total_attempts,
+            retry_hint,
             upstream.base_url,
             upstream.model,
             error_message
