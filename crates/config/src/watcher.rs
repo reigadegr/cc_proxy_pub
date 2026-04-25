@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use notify::{
     EventKind, RecursiveMode, Watcher,
@@ -19,7 +19,6 @@ pub fn start_config_watcher(config: Arc<AtomicConfig>) {
                         event.kind,
                         EventKind::Access(AccessKind::Close(AccessMode::Write))
                     ) {
-                        std::thread::sleep(Duration::from_millis(50));
                         config.reload();
                     }
                 }

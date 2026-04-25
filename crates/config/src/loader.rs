@@ -60,7 +60,7 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<Config, String> {
     toml::from_str(&content).map_err(|error| format!("Failed to parse TOML: {error}"))
 }
 
-pub fn log_loaded_config(config: &Config) {
+fn log_loaded_config(config: &Config) {
     info!("✅ 配置已加载:");
     info!("listen_port: {}", config.server.port);
     info!(
@@ -108,7 +108,7 @@ pub fn log_loaded_config(config: &Config) {
     info!("log_res_body: {}", config.server.log_res_body);
 }
 
-pub fn format_forced_upstream_target(
+fn format_forced_upstream_target(
     upstreams: &[UpstreamConfig],
     force_upstream_index: isize,
 ) -> String {

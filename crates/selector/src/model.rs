@@ -196,32 +196,6 @@ impl UpstreamConfig {
             Mode::OpenAIResponses | Mode::OpenAIChat => self.user_agent_codex.as_deref(),
         }
     }
-
-    #[must_use]
-    pub fn is_any_user_agent_configured(&self) -> bool {
-        [
-            self.user_agent_claude.as_deref(),
-            self.user_agent_codex.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|value| !value.trim().is_empty())
-    }
-}
-
-impl Default for UpstreamConfig {
-    fn default() -> Self {
-        Self {
-            enable: default_true(),
-            name: String::new(),
-            base_url: String::new(),
-            model: default_model(),
-            api_keys: Vec::new(),
-            user_agent_claude: None,
-            user_agent_codex: None,
-            mode: UpstreamModes::default(),
-        }
-    }
 }
 
 #[must_use]

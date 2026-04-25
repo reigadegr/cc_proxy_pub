@@ -167,7 +167,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
         let proxy_req = match super::request::build_proxy_request(
             ctx.req,
             &upstream_url,
-            host.as_ref(),
+            host,
             &selected_upstream.api_key,
             selected_upstream.user_agent.as_deref(),
             attempt_body,

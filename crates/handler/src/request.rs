@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use anyhow::{Result, bail};
 use bytes::Bytes;
 use http::HeaderMap;
@@ -120,7 +118,7 @@ pub fn req_local_intercept_from_json(
     true
 }
 
-pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, Cow<'a, str>) {
+pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, &'a str) {
     // 解析 base_url
     let host_str = base_url
         .strip_prefix("https://")
@@ -163,7 +161,7 @@ pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, Cow<'a, 
     }
     upstream_url = format!("{scheme}://{upstream_url}");
     info!("Proxying to: {}", upstream_url);
-    (upstream_url, Cow::Borrowed(host))
+    (upstream_url, host)
 }
 
 /// 打印全部请求头
