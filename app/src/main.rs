@@ -5,7 +5,7 @@ use std::{fmt, io::IsTerminal, sync::Arc};
 use chrono::Local;
 use gateway::{
     GatewayHandler,
-    handler::{responses_alias_proxy, unified_proxy},
+    handler::{chat_completions_alias_proxy, responses_alias_proxy, unified_proxy},
 };
 use my_config::AtomicConfig;
 use salvo::{affix_state, prelude::*};
@@ -78,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
                 .inject(Arc::clone(gateway.client())),
         )
         .push(Router::with_path("responses").goal(responses_alias_proxy))
+        .push(Router::with_path("chat/completions").goal(chat_completions_alias_proxy))
         .push(Router::with_path("v1/{**rest}").goal(unified_proxy));
 
     // 启动服务器

@@ -13,17 +13,17 @@ enum RouteTarget {
     OpenAIChat,
 }
 
-fn rewrite_responses_alias(req: &mut Request) {
-    if req.uri().path() != "/responses" {
+fn rewrite_short_alias(req: &mut Request, short_path: &str, long_path: &str) {
+    if req.uri().path() != short_path {
         return;
     }
 
     let rewritten = req.uri().query().map_or_else(
-        || "/v1/responses".to_owned(),
-        |query| format!("/v1/responses?{query}"),
+        || long_path.to_owned(),
+        |query| format!("{long_path}?{query}"),
     );
     let Ok(rewritten) = rewritten.parse() else {
-        tracing::error!("Failed to parse rewritten /responses alias URI: {rewritten}");
+        tracing::error!("Failed to parse rewritten {short_path} alias URI: {rewritten}");
         return;
     };
     *req.uri_mut() = rewritten;
@@ -70,7 +70,17 @@ async fn dispatch_proxy(req: &mut Request, depot: &Depot, res: &mut Response) {
 
 #[endpoint]
 pub async fn responses_alias_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    rewrite_responses_alias(req);
+    rewrite_short_alias(req, "/responses", "/v1/responses");
+    dispatch_proxy(req, depot, res).await;
+}
+
+#[endpoint]
+pub async fn chat_completions_alias_proxy(
+    req: &mut Request,
+    depot: &mut Depot,
+    res: &mut Response,
+) {
+    rewrite_short_alias(req, "/chat/completions", "/v1/chat/completions");
     dispatch_proxy(req, depot, res).await;
 }
 
@@ -87,7 +97,7 @@ mod tests {
         test::TestClient,
     };
 
-    use super::{RouteTarget, classify_request_path, rewrite_responses_alias};
+    use super::{RouteTarget, classify_request_path, rewrite_short_alias};
 
     fn request_from_uri(uri: &str) -> Request {
         let request = match hyper::Request::builder().uri(uri).body(bytes::Bytes::new()) {
@@ -117,10 +127,10 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_responses_alias_normalizes_path_before_classification() {
+    fn rewrite_short_alias_normalizes_path_before_classification() {
         let mut req = request_from_uri("http://localhost/responses?stream=true");
 
-        rewrite_responses_alias(&mut req);
+        rewrite_short_alias(&mut req, "/responses", "/v1/responses");
 
         assert_eq!(req.uri().path(), "/v1/responses");
         assert_eq!(req.uri().query(), Some("stream=true"));
@@ -166,6 +176,20 @@ mod tests {
         assert_eq!(
             unrelated_short_path.status_code,
             Some(StatusCode::NOT_FOUND)
+        );
+    }
+
+    #[test]
+    fn rewrite_short_alias_normalizes_chat_completions_path() {
+        let mut req = request_from_uri("http://localhost/chat/completions?stream=true");
+
+        rewrite_short_alias(&mut req, "/chat/completions", "/v1/chat/completions");
+
+        assert_eq!(req.uri().path(), "/v1/chat/completions");
+        assert_eq!(req.uri().query(), Some("stream=true"));
+        assert_eq!(
+            classify_request_path(req.uri().path()),
+            Some(RouteTarget::OpenAIChat)
         );
     }
 }
