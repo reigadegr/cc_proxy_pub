@@ -1,5 +1,3 @@
-pub mod handler;
-
 use std::sync::Arc;
 
 use my_proxy::{HttpClient, RequestStats, create_http_client};
