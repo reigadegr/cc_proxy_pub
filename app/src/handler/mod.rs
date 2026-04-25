@@ -30,7 +30,7 @@ fn rewrite_short_alias(req: &mut Request, short_path: &str, long_path: &str) {
 }
 
 fn classify_request_path(path: &str) -> Option<RouteTarget> {
-    if path == "/v1/messages" || path.starts_with("/v1/messages/") {
+    if path.starts_with("/v1/messages") {
         Some(RouteTarget::Anthropic)
     } else if path == "/v1/responses" {
         Some(RouteTarget::OpenAIResponses)
