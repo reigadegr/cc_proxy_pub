@@ -122,7 +122,7 @@ pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, &'a str)
         format!("?{query}")
     };
 
-    let new_path = if base_path.is_empty() {
+    let mut new_path = if base_path.is_empty() {
         format!("{original_path}{query_str}")
     } else {
         format!(
@@ -132,6 +132,11 @@ pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, &'a str)
             query_str
         )
     };
+
+    // 消除重复的 /v1/v1 前缀（base_url 和请求路径都带 /v1 导致）
+    while new_path.contains("/v1/v1/") || new_path.ends_with("/v1/v1") {
+        new_path = new_path.replacen("/v1/v1", "/v1", 1);
+    }
 
     let scheme = if base_url.starts_with("https://") {
         "https"
@@ -211,5 +216,23 @@ mod tests {
             "https://upstream.example.com/prefix/api/v1/messages?foo=bar"
         );
         assert_eq!(host, "upstream.example.com");
+    }
+
+    #[test]
+    fn make_proxy_url_dedup_v1_in_base_url() {
+        // base_url 带 /v1，请求路径也带 /v1，应去重为单个 /v1
+        let req = request_from_uri("http://localhost/v1/messages");
+        let (url, _) = make_proxy_url("https://upstream.example.com/v1", &req);
+
+        assert_eq!(url, "https://upstream.example.com/v1/messages");
+    }
+
+    #[test]
+    fn make_proxy_url_dedup_triple_v1() {
+        // 极端情况：三重 /v1 应逐步去重为单个
+        let req = request_from_uri("http://localhost/v1/messages");
+        let (url, _) = make_proxy_url("https://upstream.example.com/v1/v1", &req);
+
+        assert_eq!(url, "https://upstream.example.com/v1/messages");
     }
 }
