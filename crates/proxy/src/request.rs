@@ -6,13 +6,8 @@ use http_body_util::Full;
 use hyper::Request as HyperRequest;
 use my_config::Config;
 use my_handler::{
-    request::{
-        filter_req_body, parse_body_json, req_local_intercept_by_url,
-        req_local_intercept_from_json, serialize_body_json,
-    },
+    request::{parse_body_json, req_local_intercept_by_url, req_local_intercept_from_json},
     response::log_full_body,
-    system_prompt::{CUSTOM_SYSTEM_PROMPT, insert_custom_system_prompt_in_json},
-    thinking_patch::patch_reasoning_for_thinking_mode_in_json,
 };
 use salvo::prelude::*;
 
@@ -29,7 +24,7 @@ pub fn prepare_request_body(
     stats: Option<&Arc<RequestStats>>,
     res: &mut Response,
 ) -> Option<Bytes> {
-    let mut current = body_bytes;
+    let current = body_bytes;
     let mut token_stats_recorded = false;
 
     if matches!(plan.kind, ProxyKind::Anthropic)
@@ -47,30 +42,15 @@ pub fn prepare_request_body(
     }
 
     if matches!(plan.kind, ProxyKind::Anthropic) && !current.is_empty() {
-        if let Ok(mut request_json) = parse_body_json(&current) {
+        if let Ok(request_json) = parse_body_json(&current) {
             if req_local_intercept_from_json(res, &request_json, request_url, cfg) {
                 return None;
-            }
-
-            insert_custom_system_prompt_in_json(&mut request_json, CUSTOM_SYSTEM_PROMPT);
-            filter_req_body(&mut request_json);
-            if patch_reasoning_for_thinking_mode_in_json(&mut request_json) {
-                tracing::debug!("🩹 修补 thinking 模式缺失的 reasoning_content");
             }
 
             if let Some(stats) = stats {
                 calculate_tokens_from_json(stats.as_ref(), &request_json);
                 token_stats_recorded = true;
             }
-
-            current = match serialize_body_json(&request_json) {
-                Ok(body) => body,
-                Err(error) => {
-                    tracing::error!("Failed to serialize Claude request body: {}", error);
-                    res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-                    return None;
-                }
-            };
         } else {
             tracing::debug!("Skipping Claude body refinement because request JSON parsing failed");
         }

@@ -11,13 +11,7 @@ use salvo::prelude::*;
 use serde_json::{Value, from_slice, json, to_vec};
 use tracing::info;
 
-use crate::{
-    content_filter::filter_content_strings_in_json,
-    content_tag::{filter_messages_content_in_json, override_permission_error_in_json},
-    response::log_full_response,
-    system_prompt::filter_system_prompts_in_json,
-    tool_desc::prune_tools_by_description_in_json,
-};
+use crate::response::log_full_response;
 
 pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {
     // 收集请求体
@@ -36,14 +30,6 @@ pub fn parse_body_json(body_bytes: &[u8]) -> Result<Value> {
 
 pub fn serialize_body_json(json: &Value) -> Result<Bytes> {
     to_vec(json).map(Into::into).map_err(Into::into)
-}
-
-pub fn filter_req_body(json: &mut Value) {
-    filter_system_prompts_in_json(json);
-    filter_messages_content_in_json(json);
-    override_permission_error_in_json(json);
-    filter_content_strings_in_json(json);
-    prune_tools_by_description_in_json(json);
 }
 
 /// 尝试覆盖请求体中的 model 字段
