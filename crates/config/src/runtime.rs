@@ -25,7 +25,7 @@ impl AtomicConfig {
         let config = load_initial_config(&config_path);
         let upstream_selector = UpstreamSelector::new_with_global_user_agents(
             config.global_user_agent_config(),
-            config.server.force_upstream_index,
+            config.server.force_upstream_index.clone(),
             config.upstream.clone(),
         )
         .map(Arc::new);
@@ -59,7 +59,7 @@ impl AtomicConfig {
 
                 let new_selector = UpstreamSelector::new_with_global_user_agents(
                     new_global_user_agents.clone(),
-                    new_config.server.force_upstream_index,
+                    new_config.server.force_upstream_index.clone(),
                     new_config.upstream.clone(),
                 )
                 .map(Arc::new);
@@ -67,7 +67,7 @@ impl AtomicConfig {
 
                 info!("✅ 配置已更新");
                 info!(
-                    "📋 当前配置: upstream={} 个（启用 {} 个）, force_upstream_index={}, global_user_agent_configured={}",
+                    "📋 当前配置: upstream={} 个（启用 {} 个）, force_upstream_index={:?}, global_user_agent_configured={}",
                     new_config.upstream.len(),
                     enabled_upstream_count(&new_config.upstream),
                     new_config.server.force_upstream_index,

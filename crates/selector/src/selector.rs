@@ -25,8 +25,8 @@ pub struct UpstreamSelector {
     upstreams: Vec<UpstreamConfig>,
     /// 按接口区分的全局默认 User-Agent
     global_user_agents: GlobalUserAgentConfig,
-    /// 强制使用指定序号的 upstream；`-1` 表示按默认轮询
-    force_upstream_index: isize,
+    /// 强制轮询的 upstream 下标列表；非空时忽略 `enable` 字段
+    force_upstream_index: Vec<usize>,
     /// `anthropic` 模式独立轮询计数
     next_index_anthropic: AtomicUsize,
     /// `openai_responses` 模式独立轮询计数
@@ -45,7 +45,7 @@ impl UpstreamSelector {
                 claude: global_user_agent,
                 codex: None,
             },
-            -1,
+            vec![],
             upstreams,
         )
     }
@@ -53,7 +53,7 @@ impl UpstreamSelector {
     #[must_use]
     pub fn new_with_global_user_agents(
         global_user_agents: GlobalUserAgentConfig,
-        force_upstream_index: isize,
+        force_upstream_index: Vec<usize>,
         upstreams: Vec<UpstreamConfig>,
     ) -> Option<Self> {
         if upstreams.is_empty() {
@@ -88,7 +88,13 @@ impl UpstreamSelector {
     }
 
     fn forced_upstream_for_mode(&self, expected_mode: Mode) -> Option<(usize, &UpstreamConfig)> {
-        let index = usize::try_from(self.force_upstream_index).ok()?;
+        if self.force_upstream_index.is_empty() {
+            return None;
+        }
+        let mode_idx = self.mode_counter(expected_mode).load(Ordering::Relaxed);
+        let len = self.force_upstream_index.len();
+        let pos = mode_idx % len;
+        let index = *self.force_upstream_index.get(pos)?;
         let upstream = self.upstreams.get(index)?;
         upstream
             .mode
@@ -98,8 +104,16 @@ impl UpstreamSelector {
 
     /// 获取指定 mode 当前可用的 upstream 数量
     pub fn matching_count_by_mode(&self, expected_mode: Mode) -> usize {
-        if self.force_upstream_index >= 0 {
-            return usize::from(self.forced_upstream_for_mode(expected_mode).is_some());
+        if !self.force_upstream_index.is_empty() {
+            return self
+                .force_upstream_index
+                .iter()
+                .filter(|&&idx| {
+                    self.upstreams
+                        .get(idx)
+                        .is_some_and(|u| u.mode.supports(expected_mode))
+                })
+                .count();
         }
 
         self.upstreams
@@ -509,7 +523,7 @@ mod tests {
         ];
         let selector = UpstreamSelector::new_with_global_user_agents(
             GlobalUserAgentConfig::default(),
-            1,
+            vec![1],
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -561,7 +575,7 @@ mod tests {
         ];
         let selector = UpstreamSelector::new_with_global_user_agents(
             GlobalUserAgentConfig::default(),
-            1,
+            vec![1],
             upstreams,
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -575,7 +589,7 @@ mod tests {
     fn test_force_upstream_index_out_of_range_returns_none() {
         let selector = UpstreamSelector::new_with_global_user_agents(
             GlobalUserAgentConfig::default(),
-            5,
+            vec![5],
             create_test_upstreams(),
         )
         .expect("测试数据已确保 upstreams 非空");
@@ -666,7 +680,7 @@ mod tests {
                     claude: case.global_claude.map(str::to_owned),
                     codex: case.global_codex.map(str::to_owned),
                 },
-                -1,
+                vec![],
                 vec![UpstreamConfig {
                     enable: true,
                     name: "ua-upstream".to_string(),

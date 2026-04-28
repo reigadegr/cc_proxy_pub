@@ -101,11 +101,11 @@ async fn run_proxy(
         return;
     };
 
-    let force_index = cfg.server.force_upstream_index;
-    let max_attempts = if force_index >= 0 {
-        10
-    } else {
+    let force_index = cfg.server.force_upstream_index.clone();
+    let max_attempts = if force_index.is_empty() {
         selector.matching_count_by_mode(plan.upstream_mode)
+    } else {
+        10
     };
     if max_attempts == 0 {
         tracing::error!("{}", plan.missing_upstream_message);
@@ -160,13 +160,13 @@ async fn run_proxy(
 
 async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResult {
     let mut last_failure = None;
-    let forced = ctx.force_upstream_index >= 0;
+    let forced = !ctx.force_upstream_index.is_empty();
 
     for attempt in 1..=ctx.max_attempts {
         if forced && attempt > 1 {
             let backoff_secs = 2 * u64::try_from(attempt).unwrap_or(10);
             tracing::info!(
-                "{}: force_upstream_index={} 模式，第 {} 次重试，指数退避休眠 {} 秒",
+                "{}: force_upstream_index={:?} 模式，第 {} 次重试，指数退避休眠 {} 秒",
                 proxy_failure_label(plan.kind),
                 ctx.force_upstream_index,
                 attempt,

@@ -65,8 +65,8 @@ fn log_loaded_config(config: &Config) {
     info!("listen_port: {}", config.server.port);
     info!(
         "force_upstream_index: {} ({})",
-        config.server.force_upstream_index,
-        format_forced_upstream_target(&config.upstream, config.server.force_upstream_index)
+        format_force_index_list(&config.server.force_upstream_index),
+        format_forced_upstream_targets(&config.upstream, &config.server.force_upstream_index)
     );
     info!(
         "upstream 数量: {} 个（启用 {} 个）",
@@ -108,29 +108,44 @@ fn log_loaded_config(config: &Config) {
     info!("log_res_body: {}", config.server.log_res_body);
 }
 
-fn format_forced_upstream_target(
+fn format_force_index_list(indices: &[usize]) -> String {
+    if indices.is_empty() {
+        return "[]".to_string();
+    }
+    let parts: Vec<String> = indices.iter().map(ToString::to_string).collect();
+    format!("[{}]", parts.join(", "))
+}
+
+fn format_forced_upstream_targets(
     upstreams: &[UpstreamConfig],
-    force_upstream_index: isize,
+    force_upstream_index: &[usize],
 ) -> String {
-    if force_upstream_index < 0 {
+    if force_upstream_index.is_empty() {
         return "disabled".to_string();
     }
 
-    match usize::try_from(force_upstream_index)
-        .ok()
-        .and_then(|index| upstreams.get(index).map(|upstream| (index, upstream)))
-    {
-        Some((index, upstream)) => format!(
-            "target=[{}] name={}, base_url={}",
-            index,
-            if upstream.name.is_empty() {
-                "-"
-            } else {
-                upstream.name.as_str()
-            },
-            upstream.base_url
-        ),
-        None => format!("target not found, upstream_count={}", upstreams.len()),
+    let targets: Vec<String> = force_upstream_index
+        .iter()
+        .filter_map(|&index| {
+            upstreams.get(index).map(|upstream| {
+                format!(
+                    "[{}] name={}, base_url={}",
+                    index,
+                    if upstream.name.is_empty() {
+                        "-"
+                    } else {
+                        upstream.name.as_str()
+                    },
+                    upstream.base_url
+                )
+            })
+        })
+        .collect();
+
+    if targets.is_empty() {
+        format!("targets not found, upstream_count={}", upstreams.len())
+    } else {
+        targets.join("; ")
     }
 }
 
@@ -140,7 +155,7 @@ mod tests {
     use crate::{Mode, UpstreamModes};
 
     #[test]
-    fn format_forced_upstream_target_returns_target_details() {
+    fn format_forced_upstream_targets_returns_target_details() {
         let upstreams = vec![UpstreamConfig {
             enable: true,
             name: "primary".to_string(),
@@ -153,21 +168,67 @@ mod tests {
         }];
 
         assert_eq!(
-            format_forced_upstream_target(&upstreams, 0),
-            "target=[0] name=primary, base_url=https://primary.example.com"
+            format_forced_upstream_targets(&upstreams, &[0]),
+            "[0] name=primary, base_url=https://primary.example.com"
         );
     }
 
     #[test]
-    fn format_forced_upstream_target_returns_disabled_when_force_is_negative() {
-        assert_eq!(format_forced_upstream_target(&[], -1), "disabled");
+    fn format_forced_upstream_targets_returns_disabled_when_empty() {
+        assert_eq!(format_forced_upstream_targets(&[], &[]), "disabled");
     }
 
     #[test]
-    fn format_forced_upstream_target_returns_out_of_range_when_target_is_missing() {
+    fn format_forced_upstream_targets_returns_not_found_when_out_of_range() {
         assert_eq!(
-            format_forced_upstream_target(&[], 3),
-            "target not found, upstream_count=0"
+            format_forced_upstream_targets(&[], &[3]),
+            "targets not found, upstream_count=0"
         );
+    }
+
+    #[test]
+    fn format_forced_upstream_targets_returns_multiple_targets() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                name: "first".to_string(),
+                base_url: "https://first.example.com".to_string(),
+                model: "model-a".to_string(),
+                api_keys: vec!["key-1".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: UpstreamModes::from(vec![Mode::AnthropicDirect]),
+            },
+            UpstreamConfig {
+                enable: false,
+                name: "second".to_string(),
+                base_url: "https://second.example.com".to_string(),
+                model: "model-b".to_string(),
+                api_keys: vec!["key-2".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: UpstreamModes::from(vec![Mode::AnthropicDirect]),
+            },
+        ];
+
+        assert_eq!(
+            format_forced_upstream_targets(&upstreams, &[0, 1]),
+            "[0] name=first, base_url=https://first.example.com; [1] name=second, base_url=https://second.example.com"
+        );
+    }
+
+    #[test]
+    fn format_force_index_list_empty() {
+        assert_eq!(format_force_index_list(&[]), "[]");
+    }
+
+    #[test]
+    fn format_force_index_list_single() {
+        assert_eq!(format_force_index_list(&[2]), "[2]");
+    }
+
+    #[test]
+    fn format_force_index_list_multiple() {
+        assert_eq!(format_force_index_list(&[0, 2, 4]), "[0, 2, 4]");
     }
 }
