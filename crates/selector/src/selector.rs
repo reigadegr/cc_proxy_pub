@@ -93,13 +93,15 @@ impl UpstreamSelector {
         }
         let mode_idx = self.mode_counter(expected_mode).load(Ordering::Relaxed);
         let len = self.force_upstream_index.len();
-        let pos = mode_idx % len;
-        let index = *self.force_upstream_index.get(pos)?;
-        let upstream = self.upstreams.get(index)?;
-        upstream
-            .mode
-            .supports(expected_mode)
-            .then_some((index, upstream))
+        for i in 0..len {
+            let pos = (mode_idx + i) % len;
+            let index = *self.force_upstream_index.get(pos)?;
+            if let Some(upstream) = self.upstreams.get(index)
+                && upstream.mode.supports(expected_mode) {
+                    return Some((index, upstream));
+                }
+        }
+        None
     }
 
     /// 获取指定 mode 当前可用的 upstream 数量
@@ -596,6 +598,46 @@ mod tests {
 
         assert_eq!(selector.matching_count_by_mode(Mode::AnthropicDirect), 0);
         assert!(selector.next_by_mode(Mode::AnthropicDirect).is_none());
+    }
+
+    #[test]
+    fn test_force_upstream_index_skips_unsupported_mode_and_selects_next() {
+        let upstreams = vec![
+            UpstreamConfig {
+                enable: true,
+                name: "openai-only".to_string(),
+                base_url: "https://openai.example.com".to_string(),
+                model: "model-o".to_string(),
+                api_keys: vec!["key-o".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: vec![Mode::OpenAIResponses].into(),
+            },
+            UpstreamConfig {
+                enable: true,
+                name: "anthropic-upstream".to_string(),
+                base_url: "https://anthropic.example.com".to_string(),
+                model: "model-a".to_string(),
+                api_keys: vec!["key-a".to_string()],
+                user_agent_claude: None,
+                user_agent_codex: None,
+                mode: vec![Mode::AnthropicDirect].into(),
+            },
+        ];
+        let selector = UpstreamSelector::new_with_global_user_agents(
+            GlobalUserAgentConfig::default(),
+            vec![0, 1],
+            upstreams,
+        )
+        .expect("测试数据已确保 upstreams 非空");
+
+        // upstream[0] 不支持 AnthropicDirect，应跳过选中 upstream[1]
+        let (idx, _, _, _, key, _, mode) = selector
+            .next_by_mode(Mode::AnthropicDirect)
+            .expect("应跳过不支持的 upstream[0]，选中 upstream[1]");
+        assert_eq!(idx, 1);
+        assert_eq!(key, "key-a");
+        assert_eq!(mode, Mode::AnthropicDirect);
     }
 
     #[test]
