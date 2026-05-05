@@ -1,20 +1,185 @@
 use std::sync::Arc;
 
+use anyhow::{Result, bail};
 use bytes::Bytes;
-use http::{Error as HttpError, HeaderValue};
-use http_body_util::Full;
+use http::{Error as HttpError, HeaderMap, HeaderValue};
+use http_body_util::{BodyExt, Full};
 use hyper::Request as HyperRequest;
 use my_config::Config;
-use my_handler::{
-    request::{parse_body_json, req_local_intercept_by_url, req_local_intercept_from_json},
-    response::log_full_body,
+use my_optimization::{
+    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
 };
 use salvo::prelude::*;
+use serde_json::{from_slice, json, to_vec, Value};
+use tracing::info;
 
 use super::{
     service::{RequestStats, calculate_tokens, calculate_tokens_from_json},
     types::{ProxyKind, ProxyPlan},
 };
+
+pub async fn get_req_body(req: &mut Request) -> Result<Bytes> {
+    let body_bytes = match BodyExt::collect(req.body_mut()).await {
+        Ok(body) => body.to_bytes(),
+        Err(e) => {
+            bail!("Failed to collect request body: {e}");
+        }
+    };
+    Ok(body_bytes)
+}
+
+pub fn parse_body_json(body_bytes: &[u8]) -> Result<Value> {
+    from_slice::<Value>(body_bytes).map_err(Into::into)
+}
+
+#[allow(dead_code)]
+pub fn serialize_body_json(json: &Value) -> Result<Bytes> {
+    to_vec(json).map(Into::into).map_err(Into::into)
+}
+
+pub fn override_model_in_json(json: &mut Value, model: &str) {
+    let original_model = json.get("model").and_then(|m| m.as_str());
+
+    if let Some(original) = original_model {
+        info!("原始 model: {} -> 覆盖为: {}", original, model);
+    }
+
+    json["model"] = json!(model);
+}
+
+pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
+    let mut modified = from_slice::<Value>(body_bytes).ok()?;
+    override_model_in_json(&mut modified, model);
+    to_vec(&modified).ok().map(Into::into)
+}
+
+fn write_local_optimization_response(
+    res: &mut Response,
+    local_response: OptimizationResponse,
+    config: &Config,
+) {
+    info!("✅ 本地优化命中: {}", local_response.reason);
+
+    res.status_code(StatusCode::OK);
+    res.headers_mut().insert(
+        http::header::HeaderName::from_static("content-type"),
+        http::header::HeaderValue::from_static("application/json"),
+    );
+
+    if let Ok(value) = http::header::HeaderValue::from_str(local_response.reason) {
+        res.headers_mut()
+            .insert(http::header::HeaderName::from_static("x-cc-proxy-optimization"), value);
+    }
+
+    if let Ok(body_str) = std::str::from_utf8(&local_response.body)
+        && config.server.log_res_body
+    {
+        log_full_response(body_str);
+    }
+
+    res.body(local_response.body);
+}
+
+pub fn req_local_intercept_by_url(res: &mut Response, request_url: &str, config: &Config) -> bool {
+    let Some(local_response) = try_local_url_optimization(request_url, &config.optimizations)
+    else {
+        return false;
+    };
+
+    write_local_optimization_response(res, local_response, config);
+    true
+}
+
+pub fn req_local_intercept_from_json(
+    res: &mut Response,
+    request_json: &Value,
+    request_url: &str,
+    config: &Config,
+) -> bool {
+    let Some(local_response) =
+        try_local_optimization_from_json(request_json, request_url, &config.optimizations)
+    else {
+        return false;
+    };
+
+    write_local_optimization_response(res, local_response, config);
+    true
+}
+
+pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, &'a str) {
+    let host_str = base_url
+        .strip_prefix("https://")
+        .or_else(|| base_url.strip_prefix("http://"))
+        .unwrap_or(base_url);
+
+    let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
+
+    let original_path = req.uri().path();
+    let query = req.uri().query().unwrap_or("");
+    let query_str = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{query}")
+    };
+
+    let mut new_path = if base_path.is_empty() {
+        format!("{original_path}{query_str}")
+    } else {
+        format!(
+            "/{}/{}{}",
+            base_path,
+            original_path.trim_start_matches('/'),
+            query_str
+        )
+    };
+
+    while new_path.contains("/v1/v1/") || new_path.ends_with("/v1/v1") {
+        new_path = new_path.replacen("/v1/v1", "/v1", 1);
+    }
+
+    let scheme = if base_url.starts_with("https://") {
+        "https"
+    } else {
+        "http"
+    };
+
+    let mut upstream_url = format!("{host}{new_path}");
+    upstream_url = upstream_url.replace("?beta=true", "");
+
+    while upstream_url.contains("//") {
+        upstream_url = upstream_url.replace("//", "/");
+    }
+    upstream_url = format!("{scheme}://{upstream_url}");
+    info!("Proxying to: {}", upstream_url);
+    (upstream_url, host)
+}
+
+pub fn log_request_meta(method: &str, uri: &str, headers: &HeaderMap) {
+    info!("=== 请求头 ===");
+    info!("Method: {}", method);
+    info!("URI: {}", uri);
+
+    for (name, value) in headers {
+        if let Ok(value_str) = value.to_str() {
+            info!("{}: {}", name, value_str);
+        }
+    }
+    info!("=== 请求头结束 ===");
+}
+
+pub fn log_full_body(body: &str) {
+    let len = body.len();
+    info!("=== 请求体 (共 {} 字节) ===", len);
+    info!("\n{}", body);
+    info!("=== 请求体结束 ===");
+}
+
+pub fn log_full_response(body: &str) {
+    let len = body.len();
+    info!("=== 响应体 (共 {} 字节) ===", len);
+    info!("{}", body);
+    info!("=== 响应体结束 ===");
+}
 
 pub fn prepare_request_body(
     plan: ProxyPlan,

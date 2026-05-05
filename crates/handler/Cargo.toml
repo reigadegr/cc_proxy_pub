@@ -8,13 +8,12 @@ workspace = true
 
 [dependencies]
 my_config.workspace = true
-my_optimization.workspace = true
+my_proxy.workspace = true
 anyhow.workspace = true
-bytes.workspace = true
-flate2.workspace = true
-http.workspace = true
-http-body-util.workspace = true
-hyper.workspace = true
 salvo.workspace = true
-serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+hyper.workspace = true
+tokio.workspace = true

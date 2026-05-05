@@ -1,16 +1,51 @@
+use std::io::Read;
+
 use bytes::Bytes;
+use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use http::{HeaderName, HeaderValue};
 use http_body_util::{BodyExt, BodyStream};
 use hyper::{Response as HyperResponse, body::Incoming, http::response::Parts};
 use my_config::Config;
-use my_handler::response::{decompress_gzip_if_needed, log_full_response};
 use salvo::{http::ResBody, prelude::*};
+use tracing::info;
 
 use super::{
     entry::proxy_failure_label,
     types::{FailedUpstreamResponse, ProxyKind, UpstreamAttemptFailure},
 };
+
+pub fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>) -> Bytes {
+    let is_gzip = content_encoding.is_some_and(|enc| enc.to_lowercase().contains("gzip"));
+
+    if !is_gzip {
+        return body_bytes.clone();
+    }
+
+    let mut decoder = GzDecoder::new(&body_bytes[..]);
+    let mut decompressed = Vec::new();
+    match decoder.read_to_end(&mut decompressed) {
+        Ok(_) => {
+            tracing::debug!(
+                "📦 gzip 解压成功: {} bytes → {} bytes",
+                body_bytes.len(),
+                decompressed.len()
+            );
+            decompressed.into()
+        }
+        Err(e) => {
+            tracing::warn!("gzip 解压失败: {}，使用原始响应体", e);
+            body_bytes.clone()
+        }
+    }
+}
+
+pub fn log_full_response(body: &str) {
+    let len = body.len();
+    info!("=== 响应体 (共 {} 字节) ===", len);
+    info!("{}", body);
+    info!("=== 响应体结束 ===");
+}
 
 pub fn should_retry_upstream_status(status: StatusCode) -> bool {
     !status.is_success()

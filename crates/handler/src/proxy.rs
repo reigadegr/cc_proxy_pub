@@ -1,10 +1,8 @@
-pub mod utils;
-
 use my_config::Mode;
 use my_proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy};
 use salvo::prelude::*;
 
-use crate::handler::utils::setup_handler_state;
+use crate::utils::setup_handler_state;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RouteTarget {

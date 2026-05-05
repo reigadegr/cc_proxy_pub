@@ -8,8 +8,10 @@ workspace = true
 
 [dependencies]
 my_config.workspace = true
-my_handler.workspace = true
+my_optimization.workspace = true
+anyhow.workspace = true
 bytes.workspace = true
+flate2.workspace = true
 futures-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true

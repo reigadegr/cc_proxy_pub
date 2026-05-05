@@ -1,11 +1,10 @@
 mod gateway;
-mod handler;
 
 use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
 use gateway::GatewayHandler;
-use handler::{chat_completions_alias_proxy, responses_alias_proxy, unified_proxy};
+use my_handler::{chat_completions_alias_proxy, responses_alias_proxy, unified_proxy};
 use my_config::AtomicConfig;
 use salvo::{affix_state, prelude::*};
 use tracing::info;
