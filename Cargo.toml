@@ -42,7 +42,7 @@ hyper-util = { version = "0.1.20", features = ["full"] }
 mimalloc = { version = "0.1.50", features = ["v2", "no_thp", "override"] }
 notify = "8.2.0"
 rayon = "1.12.0"
-salvo = { version = "0.92.1", default-features = false, features = [
+salvo = { version = "0.93.0", default-features = false, features = [
   "server",
   "http1",
   "http2",
@@ -53,7 +53,7 @@ salvo = { version = "0.92.1", default-features = false, features = [
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 taplo = "0.14.0"
-tokio = { version = "1.52.1", features = ["full", "io-uring"] }
+tokio = { version = "1.52.2", features = ["full", "io-uring"] }
 toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
