@@ -48,11 +48,23 @@ const BILLING_HEADER_MARKERS: &[&str] = &[
     "You are Claude Code",
 ];
 
-/// 移除 system 数组中 text 以 BILLING_HEADER_MARKERS 元素开头的条目
+/// 移除 system 数组中 text 以 BILLING_HEADER_MARKERS 元素开头的条目，并压缩双空格为单空格
 pub fn strip_billing_header_from_system(json: &mut Value) {
     let Some(system) = json.get_mut("system").and_then(|s| s.as_array_mut()) else {
         return;
     };
+
+    // 先将每个 entry 的 text 中的双空格压缩为单空格
+    for entry in system.iter_mut() {
+        if let Some(text) = entry.get_mut("text").and_then(|t| t.as_str()) {
+            let mut cleaned = text.to_string();
+            while cleaned.contains("  ") {
+                cleaned = cleaned.replace("  ", " ");
+            }
+            entry["text"] = json!(cleaned);
+        }
+    }
+
     system.retain(|entry| {
         entry
             .get("text")
