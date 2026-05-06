@@ -33,14 +33,6 @@ pub fn prepare_request_body(
         return None;
     }
 
-    if matches!(plan.kind, ProxyKind::Anthropic)
-        && !current.is_empty()
-        && let Ok(body_str) = std::str::from_utf8(&current)
-        && cfg.server.log_req_body
-    {
-        log_full_body(body_str);
-    }
-
     if matches!(plan.kind, ProxyKind::Anthropic) && !current.is_empty() {
         if let Ok(request_json) = parse_body_json(&current) {
             if req_local_intercept_from_json(res, &request_json, request_url, cfg) {
