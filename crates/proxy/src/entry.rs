@@ -102,9 +102,9 @@ async fn run_proxy(
 
     let force_index = cfg.server.force_upstream_index.clone();
     let max_attempts = if force_index.is_empty() {
-        selector.matching_count_by_mode(plan.upstream_mode)
+        selector.matching_count_by_mode(plan.upstream_mode).min(30)
     } else {
-        10
+        30
     };
     if max_attempts == 0 {
         tracing::error!("{}", plan.missing_upstream_message);
@@ -162,16 +162,17 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
     let forced = !ctx.force_upstream_index.is_empty();
 
     for attempt in 1..=ctx.max_attempts {
-        if forced && attempt > 1 {
-            let backoff_secs = 2 * u64::try_from(attempt).unwrap_or(10);
+        if attempt > 1 {
+            let backoff_secs = u64::try_from(attempt % 10).unwrap_or(0);
             tracing::info!(
-                "{}: force_upstream_index={:?} 模式，第 {} 次重试，指数退避休眠 {} 秒",
+                "{}: 第 {} 次重试，休眠 {} 秒",
                 proxy_failure_label(plan.kind),
-                ctx.force_upstream_index,
                 attempt,
                 backoff_secs
             );
-            tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+            if backoff_secs > 0 {
+                tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+            }
         }
         let Some(selected_upstream) = select_upstream(ctx.selector, plan) else {
             break;
