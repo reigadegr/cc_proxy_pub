@@ -97,9 +97,10 @@ impl UpstreamSelector {
             let pos = (mode_idx + i) % len;
             let index = *self.force_upstream_index.get(pos)?;
             if let Some(upstream) = self.upstreams.get(index)
-                && upstream.mode.supports(expected_mode) {
-                    return Some((index, upstream));
-                }
+                && upstream.mode.supports(expected_mode)
+            {
+                return Some((index, upstream));
+            }
         }
         None
     }

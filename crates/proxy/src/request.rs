@@ -6,7 +6,10 @@ use http_body_util::Full;
 use hyper::Request as HyperRequest;
 use my_config::Config;
 use my_handler::{
-    request::{parse_body_json, req_local_intercept_by_url, req_local_intercept_from_json},
+    request::{
+        parse_body_json, req_local_intercept_by_url, req_local_intercept_from_json,
+        serialize_body_json, strip_billing_header_from_system,
+    },
     response::log_full_body,
 };
 use salvo::prelude::*;
@@ -24,7 +27,7 @@ pub fn prepare_request_body(
     stats: Option<&Arc<RequestStats>>,
     res: &mut Response,
 ) -> Option<Bytes> {
-    let current = body_bytes;
+    let mut current = body_bytes;
     let mut token_stats_recorded = false;
 
     if matches!(plan.kind, ProxyKind::Anthropic)
@@ -34,7 +37,9 @@ pub fn prepare_request_body(
     }
 
     if matches!(plan.kind, ProxyKind::Anthropic) && !current.is_empty() {
-        if let Ok(request_json) = parse_body_json(&current) {
+        if let Ok(mut request_json) = parse_body_json(&current) {
+            strip_billing_header_from_system(&mut request_json);
+
             if req_local_intercept_from_json(res, &request_json, request_url, cfg) {
                 return None;
             }
@@ -42,6 +47,10 @@ pub fn prepare_request_body(
             if let Some(stats) = stats {
                 calculate_tokens_from_json(stats.as_ref(), &request_json);
                 token_stats_recorded = true;
+            }
+
+            if let Ok(updated) = serialize_body_json(&request_json) {
+                current = updated;
             }
         } else {
             tracing::debug!("Skipping Claude body refinement because request JSON parsing failed");
