@@ -48,7 +48,7 @@ const BILLING_HEADER_MARKERS: &[&str] = &[
     "You are Claude Code",
 ];
 
-/// 移除 system 数组中 text 包含 x-anthropic-billing-header 的条目
+/// 移除 system 数组中 text 以 BILLING_HEADER_MARKERS 元素开头的条目
 pub fn strip_billing_header_from_system(json: &mut Value) {
     let Some(system) = json.get_mut("system").and_then(|s| s.as_array_mut()) else {
         return;
@@ -60,7 +60,7 @@ pub fn strip_billing_header_from_system(json: &mut Value) {
             .is_none_or(|text| {
                 !BILLING_HEADER_MARKERS
                     .iter()
-                    .any(|marker| text.contains(marker))
+                    .any(|marker| text.starts_with(marker))
             })
     });
 }
