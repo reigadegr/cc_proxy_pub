@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 my_config.workspace = true
+my_handler.workspace = true
 my_proxy.workspace = true
 anyhow.workspace = true
 chrono.workspace = true

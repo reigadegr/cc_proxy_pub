@@ -1,44 +1,27 @@
-pub mod utils;
+use std::sync::Arc;
 
-use my_config::Mode;
-use my_proxy::{handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy};
+use anyhow::{Result, bail};
+use my_config::AtomicConfig;
+use my_handler::routing::{RouteTarget, classify_request_path, rewrite_short_alias};
+use my_proxy::{
+    HttpClient, RequestStats, handle_anthropic as run_anthropic_proxy,
+    handle_openai as run_openai_proxy,
+};
 use salvo::prelude::*;
 
-use crate::handler::utils::setup_handler_state;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RouteTarget {
-    Anthropic,
-    OpenAIResponses,
-    OpenAIChat,
-}
-
-fn rewrite_short_alias(req: &mut Request, short_path: &str, long_path: &str) {
-    if req.uri().path() != short_path {
-        return;
-    }
-
-    let rewritten = req.uri().query().map_or_else(
-        || long_path.to_owned(),
-        |query| format!("{long_path}?{query}"),
-    );
-    let Ok(rewritten) = rewritten.parse() else {
-        tracing::error!("Failed to parse rewritten {short_path} alias URI: {rewritten}");
-        return;
+fn setup_handler_state(
+    depot: &Depot,
+) -> Result<(&Arc<AtomicConfig>, &Arc<RequestStats>, &Arc<HttpClient>)> {
+    let Ok(config) = depot.obtain::<Arc<AtomicConfig>>() else {
+        bail!("AtomicConfig not found in depot");
     };
-    *req.uri_mut() = rewritten;
-}
-
-fn classify_request_path(path: &str) -> Option<RouteTarget> {
-    if path.starts_with("/v1/messages") {
-        Some(RouteTarget::Anthropic)
-    } else if path == "/v1/responses" {
-        Some(RouteTarget::OpenAIResponses)
-    } else if path == "/v1/chat/completions" {
-        Some(RouteTarget::OpenAIChat)
-    } else {
-        None
-    }
+    let Ok(stats) = depot.obtain::<Arc<RequestStats>>() else {
+        bail!("RequestStats not found in depot");
+    };
+    let Ok(client) = depot.obtain::<Arc<HttpClient>>() else {
+        bail!("HttpClient not found in depot");
+    };
+    Ok((config, stats, client))
 }
 
 async fn dispatch_proxy(req: &mut Request, depot: &Depot, res: &mut Response) {
@@ -60,10 +43,10 @@ async fn dispatch_proxy(req: &mut Request, depot: &Depot, res: &mut Response) {
     match target {
         RouteTarget::Anthropic => run_anthropic_proxy(req, res, config, stats, client).await,
         RouteTarget::OpenAIResponses => {
-            run_openai_proxy(req, res, config, client, Mode::OpenAIResponses).await;
+            run_openai_proxy(req, res, config, client, my_config::Mode::OpenAIResponses).await;
         }
         RouteTarget::OpenAIChat => {
-            run_openai_proxy(req, res, config, client, Mode::OpenAIChat).await;
+            run_openai_proxy(req, res, config, client, my_config::Mode::OpenAIChat).await;
         }
     }
 }
@@ -87,109 +70,4 @@ pub async fn chat_completions_alias_proxy(
 #[endpoint]
 pub async fn unified_proxy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     dispatch_proxy(req, depot, res).await;
-}
-
-#[cfg(test)]
-mod tests {
-    use salvo::{
-        Request, Router, Service,
-        http::{StatusCode, uri::Scheme},
-        test::TestClient,
-    };
-
-    use super::{RouteTarget, classify_request_path, rewrite_short_alias};
-
-    fn request_from_uri(uri: &str) -> Request {
-        let request = match hyper::Request::builder().uri(uri).body(bytes::Bytes::new()) {
-            Ok(request) => request,
-            Err(error) => panic!("request should build: {error}"),
-        };
-        Request::from_hyper(request, Scheme::HTTP)
-    }
-
-    #[test]
-    fn classify_request_path_matches_expected_targets() {
-        let cases = [
-            ("/v1/messages", Some(RouteTarget::Anthropic)),
-            ("/v1/messages/count_tokens", Some(RouteTarget::Anthropic)),
-            ("/v1/responses", Some(RouteTarget::OpenAIResponses)),
-            ("/v1/chat/completions", Some(RouteTarget::OpenAIChat)),
-            ("/responses", None),
-            ("/claude/messages", None),
-            ("/codex/responses", None),
-            ("/responses/foo", None),
-            ("/foo", None),
-        ];
-
-        for (path, expected) in cases {
-            assert_eq!(classify_request_path(path), expected, "{path}");
-        }
-    }
-
-    #[test]
-    fn rewrite_short_alias_normalizes_path_before_classification() {
-        let mut req = request_from_uri("http://localhost/responses?stream=true");
-
-        rewrite_short_alias(&mut req, "/responses", "/v1/responses");
-
-        assert_eq!(req.uri().path(), "/v1/responses");
-        assert_eq!(req.uri().query(), Some("stream=true"));
-        assert_eq!(
-            classify_request_path(req.uri().path()),
-            Some(RouteTarget::OpenAIResponses)
-        );
-    }
-
-    #[tokio::test]
-    async fn route_table_only_adds_exact_responses_short_path() {
-        use salvo::prelude::endpoint;
-        #[endpoint]
-        async fn alias_marker() {}
-
-        #[endpoint]
-        async fn v1_marker() {}
-
-        let service = Service::new(
-            Router::new()
-                .push(Router::with_path("responses").goal(alias_marker))
-                .push(Router::with_path("v1/{**rest}").goal(v1_marker)),
-        );
-
-        let alias = TestClient::get("http://127.0.0.1:5801/responses")
-            .send(&service)
-            .await;
-        assert_eq!(alias.status_code, Some(StatusCode::OK));
-
-        let canonical = TestClient::get("http://127.0.0.1:5801/v1/responses")
-            .send(&service)
-            .await;
-        assert_eq!(canonical.status_code, Some(StatusCode::OK));
-
-        let other_short_path = TestClient::get("http://127.0.0.1:5801/messages")
-            .send(&service)
-            .await;
-        assert_eq!(other_short_path.status_code, Some(StatusCode::NOT_FOUND));
-
-        let unrelated_short_path = TestClient::get("http://127.0.0.1:5801/foo")
-            .send(&service)
-            .await;
-        assert_eq!(
-            unrelated_short_path.status_code,
-            Some(StatusCode::NOT_FOUND)
-        );
-    }
-
-    #[test]
-    fn rewrite_short_alias_normalizes_chat_completions_path() {
-        let mut req = request_from_uri("http://localhost/chat/completions?stream=true");
-
-        rewrite_short_alias(&mut req, "/chat/completions", "/v1/chat/completions");
-
-        assert_eq!(req.uri().path(), "/v1/chat/completions");
-        assert_eq!(req.uri().query(), Some("stream=true"));
-        assert_eq!(
-            classify_request_path(req.uri().path()),
-            Some(RouteTarget::OpenAIChat)
-        );
-    }
 }
