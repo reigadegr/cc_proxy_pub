@@ -43,7 +43,10 @@ pub fn override_model_in_json(json: &mut Value, model: &str) {
     json["model"] = json!(model);
 }
 
-const BILLING_HEADER_MARKER: &str = "x-anthropic-billing-header: cc_version";
+const BILLING_HEADER_MARKERS: &[&str] = &[
+    "x-anthropic-billing-header: cc_version",
+    "You are Claude Code",
+];
 
 /// 移除 system 数组中 text 包含 x-anthropic-billing-header 的条目
 pub fn strip_billing_header_from_system(json: &mut Value) {
@@ -54,7 +57,11 @@ pub fn strip_billing_header_from_system(json: &mut Value) {
         entry
             .get("text")
             .and_then(|t| t.as_str())
-            .is_none_or(|text| !text.contains(BILLING_HEADER_MARKER))
+            .is_none_or(|text| {
+                !BILLING_HEADER_MARKERS
+                    .iter()
+                    .any(|marker| text.contains(marker))
+            })
     });
 }
 
