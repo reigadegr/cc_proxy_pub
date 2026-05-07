@@ -1,9 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::body::get_req_body;
-use crate::log::log_request_meta;
-use crate::model::override_model_in_body;
-use crate::routing::make_proxy_url;
 use bytes::Bytes;
 use my_config::{AtomicConfig, Mode, UpstreamSelector};
 use salvo::prelude::*;
@@ -16,6 +12,11 @@ use super::{
         FailedUpstreamResponse, HttpClient, ProxyKind, ProxyPlan, RetryContext, RetryLoopResult,
         SelectedUpstream, UpstreamAttemptFailure,
     },
+};
+use crate::{
+    request::{get_req_body, override_model_in_body},
+    response::log_request_meta,
+    routing::make_proxy_url,
 };
 
 pub const fn proxy_plan_for_mode(mode: Mode) -> ProxyPlan {

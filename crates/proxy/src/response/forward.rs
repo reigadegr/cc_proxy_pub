@@ -1,19 +1,17 @@
-use std::io::Read;
-
-use bytes::Bytes;
-use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use http::{HeaderName, HeaderValue};
 use http_body_util::{BodyExt, BodyStream};
-use hyper::{Response as HyperResponse, body::Incoming, http::response::Parts};
+use hyper::{Response as HyperResponse, body::Incoming};
 use my_config::Config;
 use salvo::{http::ResBody, prelude::*};
 
 use super::{
-    entry::proxy_failure_label,
-    types::{FailedUpstreamResponse, ProxyKind, UpstreamAttemptFailure},
+    decompress::decompress_gzip_if_needed, failed::collect_failed_upstream_response,
+    logging::log_full_response,
 };
+use crate::types::{ProxyKind, UpstreamAttemptFailure};
 
+#[must_use]
 pub fn should_retry_upstream_status(status: StatusCode) -> bool {
     !status.is_success()
 }
@@ -116,50 +114,6 @@ pub async fn forward_proxy_response(
     Ok(())
 }
 
-pub async fn collect_failed_upstream_response(
-    kind: ProxyKind,
-    parts: Parts,
-    body: Incoming,
-) -> FailedUpstreamResponse {
-    let content_encoding = parts
-        .headers
-        .get("content-encoding")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let status = StatusCode::from_u16(parts.status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let headers = parts.headers.into_iter().collect();
-
-    let body_bytes = match BodyExt::collect(body).await {
-        Ok(body) => body.to_bytes(),
-        Err(error) => {
-            tracing::error!(
-                "{}: failed to collect upstream error body: {}",
-                proxy_failure_label(kind),
-                error
-            );
-            Bytes::new()
-        }
-    };
-    let body_bytes = decompress_gzip_if_needed(&body_bytes, content_encoding.as_deref());
-    let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
-
-    FailedUpstreamResponse {
-        status,
-        headers,
-        body: body_bytes.to_vec(),
-        body_text,
-    }
-}
-
-pub fn render_failed_upstream_response(
-    res: &mut Response,
-    failed_response: FailedUpstreamResponse,
-) {
-    res.status_code(failed_response.status);
-    copy_response_headers(res, failed_response.headers, true);
-    res.body(failed_response.body);
-}
-
 pub fn copy_response_headers<I>(res: &mut Response, headers: I, strip_content_encoding: bool)
 where
     I: IntoIterator<Item = (Option<HeaderName>, HeaderValue)>,
@@ -195,53 +149,4 @@ const fn sse_error_label(kind: ProxyKind) -> &'static str {
         ProxyKind::Anthropic => "SSE 流读取错误",
         ProxyKind::OpenAI => "OpenAI SSE 流读取错误",
     }
-}
-
-// ── 响应工具函数（原 utils/response.rs）──────────────────────────────
-
-/// 尝试解压 gzip 编码的响应体
-///
-/// 检查 content-encoding 头部，如果是 gzip 则自动解压。
-/// 返回解压后的字节和是否进行了解压的标志。
-pub fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>) -> Bytes {
-    // 检查是否为 gzip 编码
-    let is_gzip = content_encoding.is_some_and(|enc| enc.to_lowercase().contains("gzip"));
-
-    if !is_gzip {
-        return body_bytes.clone();
-    }
-
-    // 尝试解压 gzip 数据
-    let mut decoder = GzDecoder::new(&body_bytes[..]);
-    let mut decompressed = Vec::new();
-    match decoder.read_to_end(&mut decompressed) {
-        Ok(_) => {
-            tracing::debug!(
-                "📦 gzip 解压成功: {} bytes → {} bytes",
-                body_bytes.len(),
-                decompressed.len()
-            );
-            decompressed.into()
-        }
-        Err(e) => {
-            tracing::warn!("gzip 解压失败: {}，使用原始响应体", e);
-            body_bytes.clone()
-        }
-    }
-}
-
-/// 打印请求体
-pub fn log_full_body(body: &str) {
-    let len = body.len();
-    tracing::info!("=== 请求体 (共 {} 字节) ===", len);
-    tracing::info!("\n{}", body);
-    tracing::info!("=== 请求体结束 ===");
-}
-
-/// 打印响应体
-pub fn log_full_response(body: &str) {
-    let len = body.len();
-    tracing::info!("=== 响应体 (共 {} 字节) ===", len);
-    tracing::info!("{}", body);
-    tracing::info!("=== 响应体结束 ===");
 }
