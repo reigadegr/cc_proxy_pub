@@ -19,6 +19,9 @@ use crate::{
     routing::make_proxy_url,
 };
 
+const MAX_UPSTREAM_ATTEMPTS: usize = 300;
+const RETRY_DELAY_SECS: u64 = 1;
+
 pub const fn proxy_plan_for_mode(mode: Mode) -> ProxyPlan {
     match mode {
         Mode::AnthropicDirect => ProxyPlan {
@@ -106,9 +109,11 @@ async fn run_proxy(
 
     let force_index = cfg.server.force_upstream_index.clone();
     let max_attempts = if force_index.is_empty() {
-        selector.matching_count_by_mode(plan.upstream_mode).min(30)
+        selector
+            .matching_count_by_mode(plan.upstream_mode)
+            .min(MAX_UPSTREAM_ATTEMPTS)
     } else {
-        30
+        MAX_UPSTREAM_ATTEMPTS
     };
     if max_attempts == 0 {
         tracing::error!("{}", plan.missing_upstream_message);
@@ -167,16 +172,13 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
 
     for attempt in 1..=ctx.max_attempts {
         if attempt > 1 {
-            let backoff_secs = u64::try_from(attempt % 10).unwrap_or(0);
             tracing::info!(
                 "{}: 第 {} 次重试，休眠 {} 秒",
                 proxy_failure_label(plan.kind),
                 attempt,
-                backoff_secs
+                RETRY_DELAY_SECS
             );
-            if backoff_secs > 0 {
-                tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
-            }
+            tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECS)).await;
         }
         let Some(selected_upstream) = select_upstream(ctx.selector, plan) else {
             break;
