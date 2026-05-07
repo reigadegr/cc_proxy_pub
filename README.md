@@ -290,6 +290,7 @@ cargo run -p cli_req_refiner -- /path/to/config.toml
 |:-----|:-----|
 | **[Salvo](https://salvo.rs/)** | 高性能异步 Web 框架 |
 | **[Hyper](https://hyper.rs/)** | 成熟的 HTTP/1.1 和 HTTP/2 实现 |
+| **[hyper-rustls](https://docs.rs/hyper-rustls/)** | TLS 支持（webpki-roots） |
 | **[Tokio](https://tokio.rs/)** | Rust 异步运行时核心 |
 | **[arc-swap](https://docs.rs/arc-swap/)** | 无锁热重载配置 |
 | **[notify](https://docs.rs/notify/)** | 跨平台文件监听 |

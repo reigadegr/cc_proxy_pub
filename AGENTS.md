@@ -68,37 +68,51 @@ git config user.email
 
 ## 架构概览
 
-### 入口
-- **`app/src/main.rs`** - 初始化日志、原子配置、启动文件监听器，并按配置端口（默认 `0.0.0.0:9077`）启动 Salvo 服务器
+项目采用 workspace 结构，自底向上依赖：`selector` → `config` → `proxy` → `app`。
 
-### 配置系统
-- **`crates/config/src/lib.rs`** - 对外导出 `AtomicConfig`、`Config`、`OptimizationConfig` 以及 selector 相关类型
-- **`crates/config/src/runtime.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载
-- **`crates/config/src/model.rs`** - `Config` 与 `OptimizationConfig` 定义
-- **`crates/selector/src/model.rs`** - `UpstreamConfig`、`Mode`、`UpstreamModes` 与全局 UA 配置定义
-- **`crates/selector/src/selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys
-- **`crates/config/src/format.rs`** - TOML 格式化工具
+### 入口 (`app/src/`)
+- **`main.rs`** - 初始化日志、`AtomicConfig`、启动文件监听器，构建 Salvo 路由并按配置端口（默认 `0.0.0.0:9077`）启动服务器
+- **`gateway.rs`** - `GatewayHandler` 持有共享的 `HttpClient`（hyper + HTTPS）和 `RequestStats`
+- **`handler/mod.rs`** - 3 个 Salvo endpoint：`unified_proxy`、`responses_alias_proxy`、`chat_completions_alias_proxy`，根据 `classify_request_path` 分发到不同协议处理器
 
-### 网关层 (`app/src/gateway/`)
-- **`mod.rs`** - `GatewayHandler` 持有共享的 `HttpClient`（hyper + HTTPS）和 `RequestStats`
-- **`service.rs`** - 请求处理与编排
-- **`handler/mod.rs`** - 顶层处理器 `claude_proxy` 负责路由请求
+### 上游选择器 (`crates/selector/src/`)
+- **`lib.rs`** - 模块声明与导出
+- **`model.rs`** - `UpstreamConfig`、`Mode`（`AnthropicDirect` / `OpenAIResponses` / `OpenAIChat`）、`UpstreamModes`、`GlobalUserAgentConfig` 定义
+- **`selector.rs`** - `UpstreamSelector` 实现双层轮询：先选上游，再轮询其 API keys；支持 `force_upstream_index` 强制轮询范围
 
-### 请求处理器 (`app/src/gateway/handler/`)
-- **`mod.rs`** - 主处理逻辑
-- **`request.rs`** - 出站请求构建
-- **`response.rs`** - 响应流式返回与处理
-- **`system_prompt.rs`** - 系统提示词优化
-- **`tool_desc.rs`** - 工具定义优化
-- **`content_tag.rs`** - 内容标签处理
-- **`thinking_patch.rs`** - 思考模式补丁
-- **`utils.rs`** - 处理器工具函数
+### 配置系统 (`crates/config/src/`)
+- **`lib.rs`** - 模块声明，对外导出 `AtomicConfig`、`Config`、`OptimizationConfig`、`ServerConfig` 以及 selector 相关类型
+- **`model.rs`** - `Config`、`ServerConfig`、`OptimizationConfig` 定义；支持旧版顶层字段向后兼容
+- **`runtime.rs`** - `AtomicConfig` 使用 `arc-swap` 实现无锁热重载；持有 `ArcSwap<Config>` 和 `ArcSwap<Option<Arc<UpstreamSelector>>>`
+- **`loader.rs`** - 配置文件加载、格式化、写回
+- **`watcher.rs`** - `notify` crate 文件监听，`CloseWrite` 事件触发重载
+- **`format.rs`** - taplo TOML 格式化工具
 
-### 优化层 (`app/src/gateway/optimization/`)
-- **`mod.rs`** - 优化编排
+### 代理核心 (`crates/proxy/src/`)
+- **`lib.rs`** - 模块声明与所有公开导出
+- **`entry.rs`** - `handle_anthropic` / `handle_openai` 入口函数，含重试循环（最多 30 次）与退避策略
+- **`routing.rs`** - `RouteTarget` 枚举、`classify_request_path` 路由分类、`make_proxy_url` 代理 URL 构建、`rewrite_short_alias` 短路径重写
+- **`service.rs`** - `RequestStats` 原子计数器（总 token、用户输入、历史上下文、助手回复、系统提示）、`calculate_tokens` 统计函数
+- **`types.rs`** - `HttpClient` 类型别名、`create_http_client()`、`ProxyPlan`、`SelectedUpstream`、重试相关类型
+
+#### 请求处理 (`crates/proxy/src/request/`)
+- **`body.rs`** - `get_req_body` / `parse_body_json` / `serialize_body_json`
+- **`build.rs`** - `prepare_request_body`（请求体准备全流程）、`build_proxy_request`（构建代理请求）
+- **`intercept.rs`** - 调用优化模块进行本地拦截
+- **`model.rs`** - `override_model_in_json` / `strip_billing_header_from_system`
+
+#### 优化层 (`crates/proxy/src/request/optimization/`)
 - **`detection.rs`** - 请求类型检测（配额检查、标题生成等）
-- **`response_builder.rs`** - 拦截请求的 mock 响应构建器
+- **`rules.rs`** - `OptimizationRuleMatch` 枚举与规则匹配逻辑
+- **`engine.rs`** - 优化引擎：规则匹配 → mock 响应构建
+- **`response_builder.rs`** - `OptimizationResponse` 构建器
 - **`command_utils.rs`** - 命令前缀提取工具
+
+#### 响应处理 (`crates/proxy/src/response/`)
+- **`forward.rs`** - SSE 流式透传 + 非流式收集转发
+- **`failed.rs`** - 上游失败响应收集与渲染
+- **`decompress.rs`** - gzip 解压
+- **`logging.rs`** - 请求/响应体日志
 
 ## 配置说明
 
@@ -107,18 +121,23 @@ git config user.email
 ```toml
 [server]
 port = 9077
+force_upstream_index = []
 log_req_body = false
 log_res_body = false
+user_agent_global_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_global_codex = "Codex/0.31.0 (Linux; Android 14)"
 
-# Upstream 1: 智谱 AI Anthropic 兼容接口
+# 上游 1
 [[upstream]]
 enable = true
+name = "zhipu-main"
 base_url = "https://open.bigmodel.cn/api/anthropic"
 model = "glm-4.7"
 api_keys = ["your_api_key1", "your_api_key2"]
+user_agent_claude = "Claude-Code/1.0.84 (Linux; Android 14)"
+user_agent_codex = "Codex/0.31.0 (Linux; Android 14)"
 # mode 默认为 "anthropic"，也支持数组，例如 ["anthropic", "openai_responses"]
 # 设置 enable = false 可临时禁用该 upstream
-# 也可写成 mode = ["anthropic", "openai_responses"]
 
 [optimizations]
 enable_network_probe_mock = true
@@ -131,20 +150,24 @@ enable_filepath_extraction_mock = true
 
 配置变更会通过 `notify` crate 自动检测并重载，无需重启服务。
 监听端口 `server.port` 仅在启动时读取，修改后需要重启服务。
+旧版顶层 `port`、`log_req_body`、`log_res_body`、`user_agent_global_*` 仍兼容读取，推荐逐步迁移到 `[server]` 配置块。
 
 ## 请求流程
 
-1. Claude Code CLI 向 `/claude/*` 发送请求
-2. 处理器从 Salvo 状态中提取共享状态（配置、HTTP 客户端、统计数据）
-3. `detection.rs` 识别请求是否应被拦截
-4. 如需拦截 → `response_builder.rs` 返回 mock 响应
-5. 否则 → 通过双层轮询选择上游代理请求
-6. 流式返回响应，同时更新 `RequestStats`
+1. 客户端（Claude Code / Codex）向代理发送请求
+2. 路由层通过短路径别名（`/responses` → `/v1/responses`，`/chat/completions` → `/v1/chat/completions`）或直接 `/v1/**` 进入 `unified_proxy`
+3. `classify_request_path` 根据路径分发：`/v1/messages` → Anthropic，`/v1/responses` → OpenAI Responses，`/v1/chat/completions` → OpenAI Chat
+4. `prepare_request_body` 执行请求体准备：URL 拦截检测（`count_tokens`）→ `strip_billing_header_from_system` → JSON 拦截检测（配额/标题/建议/历史/文件路径）→ Token 统计
+5. 如需拦截 → `OptimizationResponse` 返回本地 mock 响应
+6. 否则 → `try_upstreams` 重试循环：`select_upstream` 双层轮询 → `apply_upstream_model` → `make_proxy_url` → `build_proxy_request` → 发送请求
+7. `forward_proxy_response` 流式返回响应（SSE 透传或非流式收集 + gzip 解压），失败则退避重试下一个上游
 
 ## 核心技术栈
 
 - **[Salvo](https://salvo.rs/)** - 异步 Web 框架
 - **[Hyper](https://hyper.rs/)** - HTTP 客户端（支持 HTTP/1.1 & HTTP/2）
+- **[hyper-rustls](https://docs.rs/hyper-rustls/)** - TLS 支持（webpki-roots）
+- **[Tokio](https://tokio.rs/)** - Rust 异步运行时
 - **[arc-swap](https://docs.rs/arc-swap/)** - 无锁原子配置切换
 - **[notify](https://docs.rs/notify/)** - 跨平台文件监听
 - **[mimalloc](https://github.com/microsoft/mimalloc)** - 高性能内存分配器
