@@ -1,7 +1,7 @@
 use my_config::OptimizationConfig;
 use serde_json::Value;
 
-use crate::{
+use super::{
     OptimizationResponse, command_utils, response_builder,
     rules::{OptimizationRuleMatch, detect_request_rule, detect_url_rule},
 };

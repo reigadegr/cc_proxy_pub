@@ -1,10 +1,10 @@
 use http::{HeaderName, HeaderValue};
 use my_config::Config;
-use my_optimization::{
-    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
-};
 use salvo::prelude::*;
 
+use super::optimization::{
+    OptimizationResponse, try_local_optimization_from_json, try_local_url_optimization,
+};
 use crate::response::log_full_response;
 
 fn write_local_optimization_response(

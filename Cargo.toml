@@ -1,11 +1,5 @@
 [workspace]
-members = [
-  "app",
-  "crates/config",
-  "crates/selector",
-  "crates/optimization",
-  "crates/proxy",
-]
+members = ["app", "crates/config", "crates/selector", "crates/proxy"]
 default-members = ["app"]
 resolver = "3"
 
@@ -16,7 +10,6 @@ edition = "2024"
 [workspace.dependencies]
 my_config = { path = "crates/config" }
 my_selector = { path = "crates/selector" }
-my_optimization = { path = "crates/optimization" }
 my_proxy = { path = "crates/proxy" }
 anyhow = "1.0.102"
 arc-swap = "1.9.1"

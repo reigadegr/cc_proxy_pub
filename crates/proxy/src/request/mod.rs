@@ -2,6 +2,7 @@ mod body;
 mod build;
 mod intercept;
 mod model;
+pub mod optimization;
 
 pub use body::{get_req_body, parse_body_json, serialize_body_json};
 pub use build::{build_proxy_request, prepare_request_body};
