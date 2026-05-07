@@ -39,7 +39,6 @@ hyper-rustls = { version = "0.27.9", default-features = false, features = [
 hyper-util = { version = "0.1.20", features = ["full"] }
 mimalloc = { version = "0.1.50", features = ["v2", "no_thp", "override"] }
 notify = "8.2.0"
-rayon = "1.12.0"
 salvo = { version = "0.93.0", default-features = false, features = [
   "server",
   "http1",
