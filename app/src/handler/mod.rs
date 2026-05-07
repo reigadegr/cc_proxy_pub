@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use my_config::AtomicConfig;
-use my_handler::routing::{RouteTarget, classify_request_path, rewrite_short_alias};
 use my_proxy::{
-    HttpClient, RequestStats, handle_anthropic as run_anthropic_proxy,
-    handle_openai as run_openai_proxy,
+    HttpClient, RequestStats, RouteTarget, classify_request_path,
+    handle_anthropic as run_anthropic_proxy, handle_openai as run_openai_proxy,
+    rewrite_short_alias,
 };
 use salvo::prelude::*;
 

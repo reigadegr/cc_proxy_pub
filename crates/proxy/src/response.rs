@@ -1,10 +1,10 @@
+use crate::utils::{decompress_gzip_if_needed, log_full_response};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use http::{HeaderName, HeaderValue};
 use http_body_util::{BodyExt, BodyStream};
 use hyper::{Response as HyperResponse, body::Incoming, http::response::Parts};
 use my_config::Config;
-use my_handler::response::{decompress_gzip_if_needed, log_full_response};
 use salvo::{http::ResBody, prelude::*};
 
 use super::{

@@ -1,5 +1,4 @@
-use bytes::Bytes;
-use serde_json::{Value, from_slice, json, to_vec};
+use serde_json::{Value, json, to_vec};
 use tracing::info;
 
 /// 尝试覆盖请求体中的 model 字段
@@ -33,7 +32,7 @@ pub fn strip_billing_header_from_system(json: &mut Value) {
                 ("\n\n", "\n"),
                 ("\n - \n", "\n"),
                 ("\n \n", "\n"),
-                ("\n - ","\n")
+                ("\n - ", "\n"),
             ] {
                 while cleaned.contains(pat) {
                     cleaned = cleaned.replace(pat, rep);
@@ -55,7 +54,8 @@ pub fn strip_billing_header_from_system(json: &mut Value) {
     });
 }
 
-pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<Bytes> {
+pub fn override_model_in_body(body_bytes: &[u8], model: &str) -> Option<bytes::Bytes> {
+    use serde_json::from_slice;
     let mut modified = from_slice::<Value>(body_bytes).ok()?;
     override_model_in_json(&mut modified, model);
 

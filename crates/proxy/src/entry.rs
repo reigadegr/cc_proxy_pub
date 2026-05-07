@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
+use crate::utils::{get_req_body, log_request_meta, make_proxy_url, override_model_in_body};
 use bytes::Bytes;
 use my_config::{AtomicConfig, Mode, UpstreamSelector};
-use my_handler::request::{get_req_body, log_request_meta, make_proxy_url, override_model_in_body};
 use salvo::prelude::*;
 
 use super::{

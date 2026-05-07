@@ -7,7 +7,7 @@ use salvo::prelude::*;
 use serde_json::Value;
 use tracing::info;
 
-use crate::response::log_full_response;
+use super::response::log_full_response;
 
 fn write_local_optimization_response(
     res: &mut Response,
