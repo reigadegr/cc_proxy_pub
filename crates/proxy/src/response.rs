@@ -1,5 +1,7 @@
-use crate::utils::{decompress_gzip_if_needed, log_full_response};
+use std::io::Read;
+
 use bytes::Bytes;
+use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use http::{HeaderName, HeaderValue};
 use http_body_util::{BodyExt, BodyStream};
@@ -193,4 +195,53 @@ const fn sse_error_label(kind: ProxyKind) -> &'static str {
         ProxyKind::Anthropic => "SSE 流读取错误",
         ProxyKind::OpenAI => "OpenAI SSE 流读取错误",
     }
+}
+
+// ── 响应工具函数（原 utils/response.rs）──────────────────────────────
+
+/// 尝试解压 gzip 编码的响应体
+///
+/// 检查 content-encoding 头部，如果是 gzip 则自动解压。
+/// 返回解压后的字节和是否进行了解压的标志。
+pub fn decompress_gzip_if_needed(body_bytes: &Bytes, content_encoding: Option<&str>) -> Bytes {
+    // 检查是否为 gzip 编码
+    let is_gzip = content_encoding.is_some_and(|enc| enc.to_lowercase().contains("gzip"));
+
+    if !is_gzip {
+        return body_bytes.clone();
+    }
+
+    // 尝试解压 gzip 数据
+    let mut decoder = GzDecoder::new(&body_bytes[..]);
+    let mut decompressed = Vec::new();
+    match decoder.read_to_end(&mut decompressed) {
+        Ok(_) => {
+            tracing::debug!(
+                "📦 gzip 解压成功: {} bytes → {} bytes",
+                body_bytes.len(),
+                decompressed.len()
+            );
+            decompressed.into()
+        }
+        Err(e) => {
+            tracing::warn!("gzip 解压失败: {}，使用原始响应体", e);
+            body_bytes.clone()
+        }
+    }
+}
+
+/// 打印请求体
+pub fn log_full_body(body: &str) {
+    let len = body.len();
+    tracing::info!("=== 请求体 (共 {} 字节) ===", len);
+    tracing::info!("\n{}", body);
+    tracing::info!("=== 请求体结束 ===");
+}
+
+/// 打印响应体
+pub fn log_full_response(body: &str) {
+    let len = body.len();
+    tracing::info!("=== 响应体 (共 {} 字节) ===", len);
+    tracing::info!("{}", body);
+    tracing::info!("=== 响应体结束 ===");
 }
