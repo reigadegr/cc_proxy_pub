@@ -47,6 +47,7 @@ pub async fn forward_proxy_response(
         let log_body = cfg.server.log_res_body;
         tracing::info!("{}", sse_passthrough_log(kind));
 
+        let mut sse_buf = String::new();
         let stream = BodyStream::new(body)
             .inspect(move |frame| {
                 if log_body
@@ -54,7 +55,12 @@ pub async fn forward_proxy_response(
                     && let Some(data) = frame.data_ref()
                     && let Ok(text) = std::str::from_utf8(data)
                 {
-                    tracing::info!("{}", text);
+                    sse_buf.push_str(text);
+                    while let Some(end) = sse_buf.find("\n\n") {
+                        let event = sse_buf[..end + 2].trim_end().to_string();
+                        sse_buf.drain(..end + 2);
+                        tracing::info!("{}", event);
+                    }
                 }
             })
             .filter_map(move |frame| async move {
