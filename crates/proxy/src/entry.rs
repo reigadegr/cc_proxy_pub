@@ -107,8 +107,7 @@ async fn run_proxy(
         return;
     };
 
-    let force_index = cfg.server.force_upstream_index.clone();
-    let max_attempts = if force_index.is_empty() {
+    let max_attempts = if cfg.server.force_upstream_index.is_empty() {
         selector
             .matching_count_by_mode(plan.upstream_mode)
             .min(MAX_UPSTREAM_ATTEMPTS)
@@ -127,11 +126,9 @@ async fn run_proxy(
             req,
             res,
             client,
-            cfg: &cfg,
-            selector: selector.as_ref(),
+            atomic_config: config,
             body_bytes: &body_bytes,
             max_attempts,
-            force_upstream_index: force_index,
         },
     )
     .await
@@ -168,7 +165,6 @@ async fn run_proxy(
 
 async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResult {
     let mut last_failure = None;
-    let forced = !ctx.force_upstream_index.is_empty();
 
     for attempt in 1..=ctx.max_attempts {
         if attempt > 1 {
@@ -180,7 +176,16 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
             );
             tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECS)).await;
         }
-        let Some(selected_upstream) = select_upstream(ctx.selector, plan) else {
+
+        // 每次迭代重新读取最新配置，以支持运行期间热重载
+        let current_cfg = ctx.atomic_config.get();
+        let forced = !current_cfg.server.force_upstream_index.is_empty();
+        let Some(selector) = ctx.atomic_config.get_upstream_selector() else {
+            // 配置不可用（如所有 upstream 已禁用）
+            break;
+        };
+        let Some(selected_upstream) = select_upstream(&selector, plan) else {
+            // 无匹配当前 mode 的 upstream
             break;
         };
 
@@ -207,7 +212,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
 
         match ctx.client.request(proxy_req).await {
             Ok(proxy_resp) => {
-                match forward_proxy_response(plan.kind, proxy_resp, ctx.res, ctx.cfg).await {
+                match forward_proxy_response(plan.kind, proxy_resp, ctx.res, &current_cfg).await {
                     Ok(()) => return RetryLoopResult::Forwarded,
                     Err(UpstreamAttemptFailure::Response(failed_response)) => {
                         log_failed_upstream_response(
@@ -215,7 +220,7 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
                             &selected_upstream,
                             attempt,
                             ctx.max_attempts,
-                            ctx.cfg.server.log_res_body,
+                            current_cfg.server.log_res_body,
                             &failed_response,
                             forced,
                         );

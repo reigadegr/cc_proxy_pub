@@ -8,7 +8,7 @@ use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
     rt::TokioExecutor,
 };
-use my_config::{Config, Mode, UpstreamSelector};
+use my_config::{AtomicConfig, Mode};
 use salvo::prelude::*;
 
 /// HTTP 客户端类型别名
@@ -73,9 +73,7 @@ pub struct RetryContext<'a> {
     pub(crate) req: &'a Request,
     pub(crate) res: &'a mut Response,
     pub(crate) client: &'a Arc<HttpClient>,
-    pub(crate) cfg: &'a Config,
-    pub(crate) selector: &'a UpstreamSelector,
+    pub(crate) atomic_config: &'a Arc<AtomicConfig>,
     pub(crate) body_bytes: &'a Bytes,
     pub(crate) max_attempts: usize,
-    pub(crate) force_upstream_index: Vec<usize>,
 }
