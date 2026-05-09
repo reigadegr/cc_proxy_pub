@@ -1,6 +1,7 @@
 #!/bin/bash
 
 export RUSTFLAGS="
+    --cfg tokio_unstable
     -Z mir-opt-level=2
     -Z dylib-lto=yes
     -Z inline-mir=yes

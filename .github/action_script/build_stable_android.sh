@@ -3,6 +3,7 @@
 unset RUSTFLAGS
 
 export RUSTFLAGS="
+    --cfg tokio_unstable
     -C relro-level=full
     -C default-linker-libraries
     -C code-model=small

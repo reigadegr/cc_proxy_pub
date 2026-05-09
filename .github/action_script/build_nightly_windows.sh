@@ -1,6 +1,7 @@
 #!/bin/bash
 
 export RUSTFLAGS="
+    --cfg tokio_unstable
     -Z mir-opt-level=2
     -Z inline-mir=yes
     -Z fewer-names=yes

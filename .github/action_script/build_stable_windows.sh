@@ -1,6 +1,7 @@
 #!/bin/bash
 
 export RUSTFLAGS="
+    --cfg tokio_unstable
     -C code-model=small
     -C target-cpu=native
     -C llvm-args=-fp-contract=off
