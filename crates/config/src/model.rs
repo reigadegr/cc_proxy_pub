@@ -2,15 +2,12 @@ use my_selector::{GlobalUserAgentConfig, UpstreamConfig};
 use serde::{Deserialize, Serialize};
 
 /// 配置结构
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Config {
-    #[serde(default)]
     pub server: ServerConfig,
     /// 上游提供商配置列表（支持多个上游负载均衡）
-    #[serde(default)]
     pub upstream: Vec<UpstreamConfig>,
     /// 本地优化拦截开关
-    #[serde(default)]
     pub optimizations: OptimizationConfig,
 }
 

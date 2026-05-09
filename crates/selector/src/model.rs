@@ -5,7 +5,6 @@ use serde::{
     de::{self, IntoDeserializer, Visitor},
 };
 
-/// 工作模式枚举
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum Mode {
     /// Anthropic 接口，供 `claude_proxy` 直通转发
@@ -176,7 +175,7 @@ pub struct UpstreamConfig {
     pub name: String,
     #[serde(alias = "endpoint")]
     pub base_url: String,
-    #[serde(default = "default_model")]
+    #[serde(default)]
     pub model: String,
     #[serde(default)]
     pub api_keys: Vec<String>,
@@ -201,11 +200,6 @@ impl UpstreamConfig {
 #[must_use]
 pub const fn default_true() -> bool {
     true
-}
-
-#[must_use]
-pub const fn default_model() -> String {
-    String::new()
 }
 
 #[must_use]

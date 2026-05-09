@@ -142,10 +142,6 @@ impl UpstreamSelector {
     /// 返回 (upstream索引, `name`, `base_url`, model, `api_key`, `user_agent`, `mode`)
     ///
     pub fn next_by_mode(&self, expected_mode: Mode) -> Option<UpstreamSelection<'_>> {
-        if self.upstreams.is_empty() {
-            return None;
-        }
-
         if let Some((upstream_idx, upstream)) = self.forced_upstream_for_mode(expected_mode) {
             let mode_idx = self
                 .mode_counter(expected_mode)

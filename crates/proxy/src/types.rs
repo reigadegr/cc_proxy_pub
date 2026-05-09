@@ -51,6 +51,16 @@ pub struct SelectedUpstream {
     pub(crate) mode: Mode,
 }
 
+impl SelectedUpstream {
+    pub(crate) fn display_name(&self) -> &str {
+        if self.name.is_empty() {
+            "-"
+        } else {
+            &self.name
+        }
+    }
+}
+
 pub struct FailedUpstreamResponse {
     pub(crate) status: StatusCode,
     pub(crate) headers: Vec<(Option<HeaderName>, HeaderValue)>,

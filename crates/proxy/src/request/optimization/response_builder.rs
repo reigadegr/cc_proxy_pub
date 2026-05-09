@@ -13,7 +13,6 @@ pub struct OptimizationResponse {
 }
 
 pub fn build_text_response(
-    model: &str,
     text: &str,
     input_tokens: u64,
     output_tokens: u64,
@@ -23,7 +22,7 @@ pub fn build_text_response(
         "id": build_message_id(),
         "type": "message",
         "role": "assistant",
-        "model": if model.is_empty() { "unknown-model" } else { model },
+        "model": "unknown-model",
         "content": [{"type": "text", "text": text}],
         "stop_reason": "end_turn",
         "stop_sequence": Value::Null,

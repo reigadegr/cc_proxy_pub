@@ -46,22 +46,13 @@ pub fn try_local_optimization_from_json(
 
 fn build_response(rule_match: OptimizationRuleMatch) -> Option<OptimizationResponse> {
     match rule_match {
-        OptimizationRuleMatch::CountTokensUrl => response_builder::build_text_response(
-            "unknown-model",
-            "Max tokens passed.",
-            10,
-            5,
-            "max_tokens_mock",
-        ),
-        OptimizationRuleMatch::QuotaProbe => response_builder::build_text_response(
-            "unknown-model",
-            "Quota check passed.",
-            10,
-            5,
-            "quota_probe_mock",
-        ),
+        OptimizationRuleMatch::CountTokensUrl => {
+            response_builder::build_text_response("Max tokens passed.", 10, 5, "max_tokens_mock")
+        }
+        OptimizationRuleMatch::QuotaProbe => {
+            response_builder::build_text_response("Quota check passed.", 10, 5, "quota_probe_mock")
+        }
         OptimizationRuleMatch::HistoricalAnalysis => response_builder::build_text_response(
-            "unknown-model",
             "historical analysis passed.",
             100,
             5,
@@ -69,32 +60,17 @@ fn build_response(rule_match: OptimizationRuleMatch) -> Option<OptimizationRespo
         ),
         OptimizationRuleMatch::PrefixCommand { command } => {
             let prefix = command_utils::extract_command_prefix(command.as_str());
-            response_builder::build_text_response(
-                "unknown-model",
-                prefix.as_str(),
-                100,
-                5,
-                "fast_prefix_detection",
-            )
+            response_builder::build_text_response(prefix.as_str(), 100, 5, "fast_prefix_detection")
         }
-        OptimizationRuleMatch::TitleGeneration => response_builder::build_text_response(
-            "unknown-model",
-            "Conversation",
-            100,
-            5,
-            "title_generation_skip",
-        ),
-        OptimizationRuleMatch::SuggestionMode => response_builder::build_text_response(
-            "unknown-model",
-            "",
-            100,
-            1,
-            "suggestion_mode_skip",
-        ),
+        OptimizationRuleMatch::TitleGeneration => {
+            response_builder::build_text_response("Conversation", 100, 5, "title_generation_skip")
+        }
+        OptimizationRuleMatch::SuggestionMode => {
+            response_builder::build_text_response("", 100, 1, "suggestion_mode_skip")
+        }
         OptimizationRuleMatch::FilepathExtraction { command } => {
             let filepaths = command_utils::extract_filepaths_from_command(command.as_str());
             response_builder::build_text_response(
-                "unknown-model",
                 filepaths.as_str(),
                 100,
                 10,

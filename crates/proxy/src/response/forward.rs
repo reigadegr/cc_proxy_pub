@@ -29,7 +29,7 @@ pub async fn forward_proxy_response(
         ));
     }
 
-    let status_code = parts.status.as_u16();
+    let status = parts.status;
     let is_sse = parts
         .headers
         .get("content-type")
@@ -39,7 +39,7 @@ pub async fn forward_proxy_response(
     if is_sse {
         tracing::info!("{}", sse_start_log(kind));
         res.status_code(
-            StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         );
 
         copy_response_headers(res, parts.headers, false);
@@ -114,7 +114,9 @@ pub async fn forward_proxy_response(
         tracing::info!("=== OpenAI 非 SSE 响应: {} bytes ===", body_bytes.len());
     }
 
-    res.status_code(StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
+    res.status_code(
+        StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+    );
     copy_response_headers(res, parts.headers, true);
     res.body(body_bytes.to_vec());
     Ok(())

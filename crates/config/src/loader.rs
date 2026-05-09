@@ -26,16 +26,15 @@ pub fn load_initial_config(config_path: &Path) -> Config {
     );
 
     let formatted_content = format_toml(&raw_content);
-    let formatting_changed = raw_content != formatted_content;
-    if formatting_changed {
+    if raw_content == formatted_content {
+        info!("ℹ️ 配置文件格式化后无变化: {:?}", config_path);
+    } else {
         info!(
             "✨ 配置文件格式化后有变化: {:?} ({} -> {} 字节)",
             config_path,
             raw_content.len(),
             formatted_content.len()
         );
-    } else {
-        info!("ℹ️ 配置文件格式化后无变化: {:?}", config_path);
     }
 
     if let Err(error) = fs::write(config_path, &formatted_content) {
@@ -109,11 +108,7 @@ fn log_loaded_config(config: &Config) {
 }
 
 fn format_force_index_list(indices: &[usize]) -> String {
-    if indices.is_empty() {
-        return "[]".to_string();
-    }
-    let parts: Vec<String> = indices.iter().map(ToString::to_string).collect();
-    format!("[{}]", parts.join(", "))
+    format!("{indices:?}")
 }
 
 fn format_forced_upstream_targets(

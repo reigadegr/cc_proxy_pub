@@ -49,21 +49,20 @@ pub fn make_proxy_url<'a>(base_url: &'a str, req: &Request) -> (String, &'a str)
     let (host, base_path) = host_str.split_once('/').unwrap_or((host_str, ""));
 
     let original_path = req.uri().path();
-    let query = req.uri().query().unwrap_or("");
-    let query_str = if query.is_empty() {
-        String::new()
-    } else {
-        format!("?{query}")
-    };
+    let query_suffix = req
+        .uri()
+        .query()
+        .filter(|q| !q.is_empty())
+        .map_or_else(String::new, |q| format!("?{q}"));
 
     let mut new_path = if base_path.is_empty() {
-        format!("{original_path}{query_str}")
+        format!("{original_path}{query_suffix}")
     } else {
         format!(
             "/{}/{}{}",
             base_path,
             original_path.trim_start_matches('/'),
-            query_str
+            query_suffix
         )
     };
 

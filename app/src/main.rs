@@ -1,12 +1,11 @@
-mod gateway;
 mod handler;
 
 use std::{fmt, io::IsTerminal, sync::Arc};
 
 use chrono::Local;
-use gateway::GatewayHandler;
 use handler::{chat_completions_alias_proxy, responses_alias_proxy, unified_proxy};
 use my_config::AtomicConfig;
+use my_proxy::{RequestStats, create_http_client};
 use salvo::{affix_state, prelude::*};
 use tracing::info;
 use tracing_subscriber::{
@@ -66,15 +65,16 @@ async fn main() -> anyhow::Result<()> {
     // 启动配置文件监听线程
     Arc::clone(&atomic_config).start_watcher();
 
-    // 创建 gateway handler（包含复用的 HTTP 客户端）
-    let gateway = GatewayHandler::new();
+    // 创建共享状态
+    let stats = Arc::new(RequestStats::default());
+    let client = create_http_client();
 
     // 构建路由 - 使用 affix_state::inject 注入共享状态
     let router = Router::new()
         .hoop(
             affix_state::inject(atomic_config)
-                .inject(Arc::clone(gateway.stats()))
-                .inject(Arc::clone(gateway.client())),
+                .inject(stats)
+                .inject(client),
         )
         .push(Router::with_path("responses").goal(responses_alias_proxy))
         .push(Router::with_path("chat/completions").goal(chat_completions_alias_proxy))

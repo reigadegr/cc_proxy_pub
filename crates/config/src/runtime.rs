@@ -55,10 +55,11 @@ impl AtomicConfig {
         match load_from_file(&self.config_path) {
             Ok(new_config) => {
                 let new_global_user_agents = new_config.global_user_agent_config();
+                let any_agent_configured = new_global_user_agents.is_any_configured();
                 self.inner.store(Arc::new(new_config.clone()));
 
                 let new_selector = UpstreamSelector::new_with_global_user_agents(
-                    new_global_user_agents.clone(),
+                    new_global_user_agents,
                     new_config.server.force_upstream_index.clone(),
                     new_config.upstream.clone(),
                 )
@@ -71,7 +72,7 @@ impl AtomicConfig {
                     new_config.upstream.len(),
                     enabled_upstream_count(&new_config.upstream),
                     new_config.server.force_upstream_index,
-                    new_global_user_agents.is_any_configured()
+                    any_agent_configured
                 );
             }
             Err(error) => {

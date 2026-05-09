@@ -50,11 +50,7 @@ pub async fn handle_anthropic(
     client: &Arc<HttpClient>,
 ) {
     run_proxy(
-        ProxyPlan {
-            kind: ProxyKind::Anthropic,
-            upstream_mode: Mode::AnthropicDirect,
-            missing_upstream_message: "No upstream configured with mode including 'anthropic'",
-        },
+        proxy_plan_for_mode(Mode::AnthropicDirect),
         req,
         res,
         config,
@@ -302,11 +298,7 @@ fn log_selected_upstream(
         "{} Upstream[{}] name={} (attempt {}/{}): base_url={}, model={}, api_key: {}***, mode={:?}",
         prefix,
         upstream.index,
-        if upstream.name.is_empty() {
-            "-"
-        } else {
-            upstream.name.as_str()
-        },
+        upstream.display_name(),
         attempt,
         total_attempts,
         upstream.base_url,
@@ -325,93 +317,42 @@ fn log_failed_upstream_response(
     failed_response: &FailedUpstreamResponse,
     forced: bool,
 ) {
-    let retry_hint = if forced {
-        "重试"
+    let body_suffix = if log_response_body {
+        let body = if failed_response.body_text.is_empty() {
+            "<empty body>"
+        } else {
+            failed_response.body_text.as_str()
+        };
+        format!(", body={body}")
     } else {
-        "重试下一个 upstream"
+        String::new()
     };
+
+    let name = upstream.display_name();
+
     if attempt < total_attempts {
-        if log_response_body {
-            let body = if failed_response.body_text.is_empty() {
-                "<empty body>"
-            } else {
-                failed_response.body_text.as_str()
-            };
-            tracing::warn!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, {}; base_url={}, model={}, body={}",
-                proxy_failure_label(kind),
-                upstream.index,
-                if upstream.name.is_empty() {
-                    "-"
-                } else {
-                    upstream.name.as_str()
-                },
-                attempt,
-                total_attempts,
-                failed_response.status,
-                retry_hint,
-                upstream.base_url,
-                upstream.model,
-                body
-            );
+        let retry_hint = if forced {
+            "重试"
         } else {
-            tracing::warn!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, {}; base_url={}, model={}",
-                proxy_failure_label(kind),
-                upstream.index,
-                if upstream.name.is_empty() {
-                    "-"
-                } else {
-                    upstream.name.as_str()
-                },
-                attempt,
-                total_attempts,
-                failed_response.status,
-                retry_hint,
-                upstream.base_url,
-                upstream.model
-            );
-        }
+            "重试下一个 upstream"
+        };
+        tracing::warn!(
+            "{}: upstream[{}] name={name} attempt {attempt}/{total_attempts} returned status {}, {retry_hint}; base_url={}, model={}{body_suffix}",
+            proxy_failure_label(kind),
+            upstream.index,
+            failed_response.status,
+            upstream.base_url,
+            upstream.model,
+        );
     } else {
-        if log_response_body {
-            let body = if failed_response.body_text.is_empty() {
-                "<empty body>"
-            } else {
-                failed_response.body_text.as_str()
-            };
-            tracing::error!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, no upstream left; base_url={}, model={}, body={}",
-                proxy_failure_label(kind),
-                upstream.index,
-                if upstream.name.is_empty() {
-                    "-"
-                } else {
-                    upstream.name.as_str()
-                },
-                attempt,
-                total_attempts,
-                failed_response.status,
-                upstream.base_url,
-                upstream.model,
-                body
-            );
-        } else {
-            tracing::error!(
-                "{}: upstream[{}] name={} attempt {}/{} returned status {}, no upstream left; base_url={}, model={}",
-                proxy_failure_label(kind),
-                upstream.index,
-                if upstream.name.is_empty() {
-                    "-"
-                } else {
-                    upstream.name.as_str()
-                },
-                attempt,
-                total_attempts,
-                failed_response.status,
-                upstream.base_url,
-                upstream.model
-            );
-        }
+        tracing::error!(
+            "{}: upstream[{}] name={name} attempt {attempt}/{total_attempts} returned status {}, no upstream left; base_url={}, model={}{body_suffix}",
+            proxy_failure_label(kind),
+            upstream.index,
+            failed_response.status,
+            upstream.base_url,
+            upstream.model,
+        );
     }
 }
 
@@ -423,43 +364,28 @@ fn log_transport_failure(
     error_message: &str,
     forced: bool,
 ) {
-    let retry_hint = if forced {
-        "重试"
-    } else {
-        "重试下一个 upstream"
-    };
+    let name = upstream.display_name();
+
     if attempt < total_attempts {
+        let retry_hint = if forced {
+            "重试"
+        } else {
+            "重试下一个 upstream"
+        };
         tracing::warn!(
-            "{}: upstream[{}] name={} attempt {}/{} transport error, {}; base_url={}, model={}, error={}",
+            "{}: upstream[{}] name={name} attempt {attempt}/{total_attempts} transport error, {retry_hint}; base_url={}, model={}, error={error_message}",
             proxy_failure_label(kind),
             upstream.index,
-            if upstream.name.is_empty() {
-                "-"
-            } else {
-                upstream.name.as_str()
-            },
-            attempt,
-            total_attempts,
-            retry_hint,
             upstream.base_url,
             upstream.model,
-            error_message
         );
     } else {
         tracing::error!(
-            "{}: upstream[{}] name={} attempt {}/{} transport error, no upstream left; base_url={}, model={}, error={}",
+            "{}: upstream[{}] name={name} attempt {attempt}/{total_attempts} transport error, no upstream left; base_url={}, model={}, error={error_message}",
             proxy_failure_label(kind),
             upstream.index,
-            if upstream.name.is_empty() {
-                "-"
-            } else {
-                upstream.name.as_str()
-            },
-            attempt,
-            total_attempts,
             upstream.base_url,
             upstream.model,
-            error_message
         );
     }
 }
