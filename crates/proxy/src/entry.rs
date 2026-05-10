@@ -20,7 +20,7 @@ use crate::{
 };
 
 const MAX_UPSTREAM_ATTEMPTS: usize = 300;
-const RETRY_DELAY_SECS: u64 = 1;
+const RETRY_DELAY_MS: u64 = 200;
 
 pub const fn proxy_plan_for_mode(mode: Mode) -> ProxyPlan {
     match mode {
@@ -165,12 +165,12 @@ async fn try_upstreams(plan: ProxyPlan, ctx: RetryContext<'_>) -> RetryLoopResul
     for attempt in 1..=ctx.max_attempts {
         if attempt > 1 {
             tracing::info!(
-                "{}: 第 {} 次重试，休眠 {} 秒",
+                "{}: 第 {} 次重试，休眠 {}ms",
                 proxy_failure_label(plan.kind),
                 attempt,
-                RETRY_DELAY_SECS
+                RETRY_DELAY_MS
             );
-            tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECS)).await;
+            tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
         }
 
         // 每次迭代重新读取最新配置，以支持运行期间热重载
