@@ -57,13 +57,15 @@ pub fn prepare_request_body(
         }
     }
 
-    if matches!(plan.upstream_mode, Mode::OpenAIChat) && !current.is_empty()
-        && let Ok(mut request_json) = parse_body_json(&current) {
-            override_max_tokens_in_json(&mut request_json);
-            if let Ok(updated) = serialize_body_json(&request_json) {
-                current = updated;
-            }
+    if matches!(plan.upstream_mode, Mode::OpenAIChat)
+        && !current.is_empty()
+        && let Ok(mut request_json) = parse_body_json(&current)
+    {
+        override_max_tokens_in_json(&mut request_json);
+        if let Ok(updated) = serialize_body_json(&request_json) {
+            current = updated;
         }
+    }
 
     if !current.is_empty()
         && let Ok(body_str) = std::str::from_utf8(&current)
