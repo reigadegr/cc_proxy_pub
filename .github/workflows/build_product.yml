@@ -137,6 +137,7 @@ jobs:
         shell: bash
         run: |
           git clone --depth 1 https://github.com/reigadegr/cli_req_refiner common
+          rm -rf common/.cargo
 
       - name: "🔨 Build common"
         shell: bash
